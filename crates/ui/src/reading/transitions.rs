@@ -51,12 +51,6 @@ impl<S: TextSource + Pages> View<'_, S> {
     self.reveal()
   }
 
-  pub fn open_page(&mut self, page: PageId) -> Result<()> {
-    self.reader.edge(page, false, &mut self.source)?;
-    self.show_page(self.reader.cursor.page)?;
-    self.reveal()
-  }
-
   pub fn mirror(
     &mut self,
     shown: Position,

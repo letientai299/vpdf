@@ -898,7 +898,7 @@ mod tests {
     assert!(!scene.contains(&Op::Move { row: 0, column: 0 }));
     for (row, expected) in [(1, Effect::Stay), (5, Effect::Open(file.into()))] {
       let click = Event::Mouse(Mouse {
-        kind: MouseKind::Press(Button::LEFT),
+        kind: MouseKind::Press(Button::new(1)),
         at: Spot::Cell { column: 8, row },
         modifiers: KeyModifiers::NONE,
       });
@@ -917,7 +917,7 @@ mod tests {
     };
     let screen = crate::testing::screen::cells(80, 24);
     let click = Event::Mouse(Mouse {
-      kind: MouseKind::Press(Button::LEFT),
+      kind: MouseKind::Press(Button::new(1)),
       at: Spot::Cell { column: 8, row: 1 },
       modifiers: KeyModifiers::NONE,
     });

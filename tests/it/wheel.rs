@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::session::Session;
+use vpdf::trace::Drawable;
 use vpdf_model::input::{MouseEvent, MouseEventKind};
 use vpdf_model::text::PageId;
 use vpdf_reader::motion::Motion;
@@ -276,7 +277,7 @@ fn panel_preview_and_text_turns_frame_until_an_end() -> Result<()> {
   // Panel rows scroll within their bounds.
   let mut panel = crate::harness::session(&path, screen())?;
   scrolling_panel(panel.app().unwrap())?;
-  panel.draw_focused(&mut Vec::new())?;
+  panel.draw_frame(&mut Vec::new())?;
   assert!(!wheel(&mut panel, UP, pixel((2, 5)))?);
   assert!(wheel(&mut panel, DOWN, pixel((2, 5)))?);
   // The preview scrolls down, not above its top.
@@ -329,10 +330,10 @@ fn status_row_wheel_scrolls_the_pane() -> Result<()> {
       "P" => scrolling_panel(app)?,
       _ => {}
     }
-    session.draw_focused(&mut Vec::new())?;
+    session.draw_frame(&mut Vec::new())?;
     let before = moved(session.app().unwrap());
     assert!(wheel(&mut session, DOWN, (x, row))?, "{view} {x}");
-    session.draw_focused(&mut Vec::new())?;
+    session.draw_frame(&mut Vec::new())?;
     assert!(moved(session.app().unwrap()) > before, "{view} {x}");
   }
   Ok(())
@@ -345,7 +346,7 @@ fn overview_wheel_scrolls_rows_and_keeps_selection() -> Result<()> {
   let mut session = crate::harness::session(&path, screen())?;
   let app = session.app().unwrap();
   app.open_overview()?;
-  session.draw_focused(&mut Vec::new())?;
+  session.draw_frame(&mut Vec::new())?;
   // (selected page, top row)
   let state = |session: &mut Session| {
     let overview =
@@ -355,13 +356,13 @@ fn overview_wheel_scrolls_rows_and_keeps_selection() -> Result<()> {
   assert_eq!(state(&mut session), (0, 0));
   for (flags, row) in [(DOWN, 1), (DOWN, 2), (UP, 1), (DOWN | CTRL, 2)] {
     assert!(wheel(&mut session, flags, (480, 300))?);
-    session.draw_focused(&mut Vec::new())?;
+    session.draw_frame(&mut Vec::new())?;
     assert_eq!(state(&mut session), (0, row), "{flags}");
   }
   for _ in 0..40 {
     wheel(&mut session, DOWN, (480, 300))?;
   }
-  session.draw_focused(&mut Vec::new())?;
+  session.draw_frame(&mut Vec::new())?;
   let last = state(&mut session);
   assert!(!wheel(&mut session, DOWN, (480, 300))?, "the last row");
   assert_eq!(state(&mut session), last);
@@ -380,7 +381,7 @@ fn overview_wheel_scrolls_rows_and_keeps_selection() -> Result<()> {
   assert!(state(&mut session).1 > 1);
   session.app().unwrap().screen.rows = 30;
   session.app().unwrap().relayout()?;
-  session.draw_focused(&mut Vec::new())?;
+  session.draw_frame(&mut Vec::new())?;
   assert_eq!(state(&mut session), (columns, 1));
   // A click opens the page under it after the wheel scrolled.
   wheel(&mut session, DOWN, (480, 300))?;
@@ -412,7 +413,7 @@ fn linked(path: &Path, text: bool) -> Result<Session> {
   // Near the bottom, which leaves room to scroll the page.
   app.go_to_page(PageId(0))?;
   app.reader.seed_reader(|reader| reader.cursor = position);
-  app.reader.point_to(position);
+  app.reading_view().restore_position(position)?;
   app.ensure_cursor()?;
   app.preview_link()?;
   assert!(app.overlays.preview().is_some());
@@ -523,7 +524,7 @@ fn menu_turns_move_what_is_beneath() -> Result<()> {
       "overview" => app.open_overview()?,
       _ => {}
     }
-    session.draw_focused(&mut Vec::new())?;
+    session.draw_frame(&mut Vec::new())?;
     let app = session.app().unwrap();
     let at = if surface == "panel" { (4, 6) } else { (app.left + 20, 6) };
     crate::mouse::right(&mut session, at)?;
@@ -545,7 +546,7 @@ fn menu_turns_move_what_is_beneath() -> Result<()> {
     let area = menu.unwrap_or_else(|| panic!("{surface}: a menu"));
     let pixel = (area.column * 8 + 4, area.row * 16 + 8);
     let framed = wheel(&mut session, DOWN, pixel)?;
-    session.draw_focused(&mut Vec::new())?;
+    session.draw_frame(&mut Vec::new())?;
     let after = state(&mut session);
     let moved = (before.0 != after.0, before.1 != after.1, before.2 != after.2);
     assert_eq!(moved, want, "{surface}");

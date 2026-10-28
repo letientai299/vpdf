@@ -76,9 +76,6 @@ impl Renderer {
   pub fn display(&mut self, display: Display) {
     self.display = display;
   }
-  pub fn staging_capacity(&self) -> usize {
-    self.uploads.as_ref().map_or(0, crate::upload::Uploads::capacity)
-  }
   pub fn with_gpu(state: eframe::egui_wgpu::RenderState) -> Self {
     Self {
       uploads: Some(crate::upload::Uploads::new(state)),

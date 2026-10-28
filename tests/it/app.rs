@@ -4,6 +4,7 @@ use crate::focus::send;
 pub(super) use crate::harness::draw as drawn;
 use crate::harness::{corpus, page_route, screen, session, solo, temp_copy};
 use unicode_width::UnicodeWidthChar;
+use vpdf::trace::Drawable;
 
 use std::time::{Duration, Instant};
 use vpdf::Result;
@@ -82,15 +83,10 @@ fn scrolling_converges_and_jumps_interrupt() -> Result<()> {
   app.scroll(100.0)?;
   assert_eq!(app.reader.animation().target().unwrap(), 200.0);
   assert_eq!(app.reader.scroll, 0.0);
-  for _ in 0..30 {
-    if let Some(target) = app.reader.animation().target() {
-      app.reader.animate_to(
-        target,
-        Instant::now().checked_sub(Duration::from_millis(16)).unwrap(),
-      );
-    }
+  let now = Instant::now();
+  for tick in 1..=30 {
     let previous = app.reader.scroll;
-    app.animate();
+    app.reader.animate(now + Duration::from_millis(16 * tick));
     assert!(app.reader.scroll >= previous && app.reader.scroll <= 200.0);
   }
   assert!(!app.reader.animation().active());
@@ -380,7 +376,8 @@ fn changed_file_reloads_after_settling() -> Result<()> {
 fn hint_labels_keep_their_origin() -> Result<()> {
   let mut app = text_app()?;
   app.at = vpdf_model::geometry::At { column: 17, row: 4 };
-  app.layout.relocate((17, 4));
+  app.screen.origin = (17, 4);
+  app.relayout()?;
   app.left = 9;
   for text_mode in [true, false] {
     app.text_mode = text_mode;
@@ -465,7 +462,7 @@ fn preview_shows_citation_target() -> Result<()> {
     };
     app.ensure_cursor()?;
     let cursor = app.reader.cursor;
-    app.reader.point_to(cursor);
+    app.reading_view().restore_position(cursor)?;
     app.preview_link()?;
     assert!(app.overlays.preview().is_some());
     let mut out = Vec::new();
@@ -729,7 +726,7 @@ fn recent_view_covers_the_pane() -> Result<()> {
   for command in ["1", "iv", "text", "reload"] {
     assert!(session.command(command).is_err());
   }
-  session.draw_focused(&mut Vec::new())?;
+  session.draw_frame(&mut Vec::new())?;
   session.command("e #")?;
   assert_ne!(session.app()?.id, id);
   assert_eq!(session.app()?.path, path.canonicalize()?);
@@ -954,7 +951,7 @@ fn motion_redraws_only_for_new_targets() -> Result<()> {
   let mut session = session(&corpus("paper.pdf")?, screen())?;
   let app = session.app().unwrap();
   app.command("2")?;
-  session.draw_focused(&mut Vec::new())?;
+  session.draw_frame(&mut Vec::new())?;
   let app = session.app().unwrap();
   let targets = hover_targets(app)?;
   let link = targets.iter().find(|(_, hit)| matches!(hit, Hit::Link(..)));
@@ -1119,7 +1116,7 @@ fn pixel_reports_hit_their_pixel() -> Result<()> {
   }
   let (pixel, glyph) = found.expect("a cell spanning two glyphs");
   let press = Mouse {
-    kind: MouseKind::Press(Button::LEFT),
+    kind: MouseKind::Press(Button::new(1)),
     at: Spot::Pixel { x: pixel.x, y: pixel.y },
     modifiers: KeyModifiers::NONE,
   };
@@ -1127,7 +1124,7 @@ fn pixel_reports_hit_their_pixel() -> Result<()> {
   assert_eq!(session.app().unwrap().reader.cursor, glyph);
   // Drags draw only once they move the selection.
   let drag = |x| Mouse {
-    kind: MouseKind::Drag(Button::LEFT),
+    kind: MouseKind::Drag(Button::new(1)),
     at: Spot::Pixel { x, y: pixel.y },
     modifiers: KeyModifiers::NONE,
   };
@@ -1135,7 +1132,7 @@ fn pixel_reports_hit_their_pixel() -> Result<()> {
   assert!(session.mouse_report(drag(pixel.x + 40))?, "a new glyph");
   assert!(!session.mouse_report(drag(pixel.x + 41))?, "the same glyph");
   let release =
-    Mouse { kind: MouseKind::Release(Button::LEFT), ..drag(pixel.x + 41) };
+    Mouse { kind: MouseKind::Release(Button::new(1)), ..drag(pixel.x + 41) };
   session.mouse_report(release)?;
   // Leaving the window ends the hover once.
   let moved = Mouse { kind: MouseKind::Moved, ..press };
@@ -1166,11 +1163,11 @@ fn pixel_drags_draw_on_new_glyphs() -> Result<()> {
   let cases = [
     (MouseKind::Moved, x, true),
     (MouseKind::Moved, x + 1, false),
-    (MouseKind::Press(Button::LEFT), x, true),
-    (MouseKind::Drag(Button::LEFT), x + 1, false),
-    (MouseKind::Drag(Button::LEFT), x + 40, true),
-    (MouseKind::Drag(Button::LEFT), x + 40, false),
-    (MouseKind::Release(Button::LEFT), x + 40, true),
+    (MouseKind::Press(Button::new(1)), x, true),
+    (MouseKind::Drag(Button::new(1)), x + 1, false),
+    (MouseKind::Drag(Button::new(1)), x + 40, true),
+    (MouseKind::Drag(Button::new(1)), x + 40, false),
+    (MouseKind::Release(Button::new(1)), x + 40, true),
   ];
   for (step, (kind, x, frame)) in cases.into_iter().enumerate() {
     assert_eq!(session.mouse_report(report(kind, x))?, frame, "step {step}");

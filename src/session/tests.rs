@@ -492,7 +492,7 @@ fn input_proves_the_pane_shown() -> Result<()> {
   use Sight::{Focused, Hidden, Unfocused};
   let key = Act::Key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
   let mouse = Act::Mouse(Mouse {
-    kind: MouseKind::Press(Button::LEFT),
+    kind: MouseKind::Press(Button::new(1)),
     at: Spot::Cell { column: 1, row: 1 },
     modifiers: KeyModifiers::NONE,
   });
@@ -714,7 +714,7 @@ fn veils_skip_menus() -> Result<()> {
     }
     assert!(session.app().unwrap().panel_focused(), "{column:?}");
     let mut out = Vec::new();
-    session.draw_focused(&mut out)?;
+    session.draw_frame(&mut out)?;
     assert_eq!(veiled(&out), want, "{column:?}");
   }
   Ok(())
@@ -729,7 +729,7 @@ fn overview_rings_skip_the_menu() -> Result<()> {
   let screen = cells(80, 24);
   let mut session = line_session(directory.path(), "", screen)?;
   session.app().unwrap().open_overview()?;
-  session.draw_focused(&mut Vec::new())?;
+  session.draw_frame(&mut Vec::new())?;
   let app = session.app().unwrap();
   let mut cells = (0..23).flat_map(|row| (0..80).map(move |c| (c, row)));
   let thumbnail =
@@ -742,7 +742,7 @@ fn overview_rings_skip_the_menu() -> Result<()> {
   let menu =
     session.app().unwrap().context_rect().expect("a menu over the page");
   let mut out = Vec::new();
-  session.draw_focused(&mut out)?;
+  session.draw_frame(&mut out)?;
   let rings = highlights(&out, session.app().unwrap().left);
   assert!(!rings.is_empty(), "the selected ring shows");
   let over = |b: &Bounds| {
@@ -844,7 +844,7 @@ fn only_actionable_input_counts() {
     })
   };
   let click =
-    |at| Mouse { kind: MouseKind::Press(Button::LEFT), at, modifiers: none };
+    |at| Mouse { kind: MouseKind::Press(Button::new(1)), at, modifiers: none };
   let pixel = Spot::Pixel { x: 1, y: 2 };
   let cases = [
     (
@@ -856,7 +856,7 @@ fn only_actionable_input_counts() {
     (Event::Resize(None), Some(Act::Resize(None))),
     (Event::Resize(Some(size)), Some(Act::Resize(Some(size)))),
     (
-      mouse(MouseKind::Press(Button::LEFT), cell),
+      mouse(MouseKind::Press(Button::new(1)), cell),
       Some(Act::Mouse(click(cell))),
     ),
     (
@@ -869,7 +869,7 @@ fn only_actionable_input_counts() {
     ),
     (mouse(MouseKind::Release(Button::BACK), cell), None),
     (
-      mouse(MouseKind::Press(Button::LEFT), pixel),
+      mouse(MouseKind::Press(Button::new(1)), pixel),
       Some(Act::Mouse(click(pixel))),
     ),
     (Event::Leave, Some(Act::Leave)),
@@ -972,16 +972,12 @@ fn static_pane_keeps_hover() -> Result<()> {
   let mut session = Session::new(None);
   let path = line_pdf(directory.path(), "")?;
   let screen = cells(121, 40);
-  session.open(&path, true, screen)?;
+  session.open(&path, false, screen)?;
   let modifiers = KeyModifiers::NONE;
   session.app().unwrap().command("vsplit")?;
   session.settle()?;
   let pointed = session.tab().panes[0].id;
-  session.tab().panes[1]
-    .document_mut()
-    .unwrap()
-    .reader
-    .animate_to(20.0, Instant::now());
+  session.tab().panes[1].document_mut().unwrap().scroll(20.0)?;
   let app = session.tab().panes[0].document().unwrap();
   let mouse = MouseEvent {
     kind: MouseEventKind::Moved,
@@ -997,7 +993,6 @@ fn static_pane_keeps_hover() -> Result<()> {
   Ok(())
 }
 
-/// Hover waits out a wheel gesture, then tests the page again.
 #[test]
 fn wheel_turns_defer_page_hover() -> Result<()> {
   let directory = tempfile::tempdir()?;
@@ -1006,6 +1001,8 @@ fn wheel_turns_defer_page_hover() -> Result<()> {
   let screen = cells(121, 40);
   let mut session = line_session(directory.path(), link, screen)?;
   let app = session.app().unwrap();
+  app.text_mode = false;
+  app.relayout()?;
   let bounds = app.doc.links(PageId(0))?[0].first();
   let rect = app.layout.project(PageId(0), bounds, app.reader.scroll);
   let (x, y) = rect.centre();
@@ -1025,7 +1022,7 @@ fn wheel_turns_defer_page_hover() -> Result<()> {
     modifiers,
   })?;
   assert!(link_hit(&session));
-  session.app().unwrap().reader.animate_to(20.0, Instant::now());
+  session.app().unwrap().scroll(20.0)?;
   session.rehover();
   assert!(!session.mouse(MouseEvent {
     kind: MouseEventKind::Moved,

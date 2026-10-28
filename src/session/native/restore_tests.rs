@@ -33,7 +33,7 @@ fn saved(root: &Path) -> Result<(Vec<PathBuf>, Layout)> {
   }
   session.activate(1)?;
   session.split(Axis::Columns, None, Place::After)?;
-  session.app().unwrap().reading_view().open_page(PageId(3))?;
+  session.app().unwrap().reading_view().go_to_page(PageId(3))?;
   session.settle()?;
   let layout = session.layout();
   session.finish()?;
@@ -150,7 +150,7 @@ fn newer_reading_state_wins() -> Result<()> {
   let (files, layout) = saved(root.path())?;
   let mut other = session(root.path())?;
   other.open(&files[1], true, cells(80, 24))?;
-  other.app().unwrap().reading_view().open_page(PageId(6))?;
+  other.app().unwrap().reading_view().go_to_page(PageId(6))?;
   other.settle()?;
   let moved = other.app().unwrap().navigation_position();
   other.finish()?;
@@ -174,7 +174,7 @@ fn split_views_survive_relaunch() -> Result<()> {
   let mut first = session(root.path())?;
   first.open(&path, true, cells(80, 24))?;
   first.split(Axis::Columns, None, Place::After)?;
-  first.app().unwrap().reading_view().open_page(PageId(5))?;
+  first.app().unwrap().reading_view().go_to_page(PageId(5))?;
   first.settle()?;
   let layout = first.layout();
   first.finish()?;

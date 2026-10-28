@@ -57,7 +57,6 @@ impl Button {
     Self(number)
   }
 
-  pub const LEFT: Self = Self(1);
   pub const BACK: Self = Self(8);
   pub const FORWARD: Self = Self(9);
 }
@@ -195,7 +194,7 @@ mod tests {
       (MouseKind::Release(Button::BACK), None),
       (MouseKind::Drag(Button::FORWARD), None),
       (MouseKind::Press(Button(10)), None),
-      (MouseKind::Press(Button::LEFT), None),
+      (MouseKind::Press(Button::new(1)), None),
     ];
     for (kind, want) in cases {
       assert_eq!(mouse(kind).history(), want, "{kind:?}");

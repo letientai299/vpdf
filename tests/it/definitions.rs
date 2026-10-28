@@ -12,7 +12,7 @@ use vpdf_ui::keys::PanelKind;
 fn open(pages: &[&[&str]], text: bool) -> Result<(tempfile::TempDir, Solo)> {
   let (directory, mut app) =
     crate::common::temp_solo(|path| pages_pdf(path, pages), text, screen())?;
-  app.reader.point_to(Position::default());
+  app.reading_view().restore_position(Position::default())?;
   Ok((directory, app))
 }
 
@@ -25,7 +25,7 @@ fn definition_jumps_and_returns() -> Result<()> {
         text,
       )?;
       let origin = Position { glyph: 4, ..Position::default() };
-      app.reader.point_to(origin);
+      app.reading_view().restore_position(origin)?;
       app.reader.seed_reader(|reader| reader.cursor = origin);
       if cursor {
         keys(&mut app, b"i")?;
@@ -67,7 +67,7 @@ fn missing_and_canceled_definitions_stay_put() -> Result<()> {
   assert_eq!(app.reader.message, "Reference not found");
   assert_eq!(app.reader.cursor.page, PageId(0));
   for cancel in [b"\x1b[27u".as_slice(), b"j"] {
-    app.reader.point_to(Position::default());
+    app.reading_view().restore_position(Position::default())?;
     keys(&mut app, b"gd")?;
     keys(&mut app, cancel)?;
     assert!(matches!(app.search.phase(), Phase::Idle));
@@ -103,7 +103,7 @@ fn embedded_definition_keeps_history() -> Result<()> {
   ));
   super::common::write_pdf(&path, &objects, "")?;
   let mut app = Solo::open(&path, "", false, screen())?;
-  app.reader.point_to(Position::default());
+  app.reading_view().restore_position(Position::default())?;
   keys(&mut app, b"gd")?;
   assert_eq!(app.reader.cursor.page, PageId(1));
   assert!(app.search_worker.is_none());
@@ -119,7 +119,7 @@ fn external_definition_does_not_open_browser() -> Result<()> {
     false,
     screen(),
   )?;
-  app.reader.point_to(Position::default());
+  app.reading_view().restore_position(Position::default())?;
   keys(&mut app, b"gd")?;
   assert_eq!(app.reader.message, "External link: use gx");
   assert!(app.search_worker.is_none());

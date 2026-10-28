@@ -8,6 +8,7 @@ use mupdf::{Point, Quad, Rect};
 use vpdf::Result;
 use vpdf::app::App;
 use vpdf::solo::Solo;
+use vpdf::trace::Drawable;
 use vpdf_model::text::{PageId, Position};
 use vpdf_reader::reader::Mode;
 use vpdf_ui::input::InputOwner;
@@ -407,7 +408,7 @@ fn outline_hovers_drop_the_indent() -> Result<()> {
     app.doc.outline.push(Heading { title: title.into(), depth, target });
   }
   app.open_panel(PanelKind::Outline)?;
-  session.draw_focused(&mut Vec::new())?;
+  session.draw_frame(&mut Vec::new())?;
   let app = session.app().unwrap();
   let (column, row) = (0..app.screen.columns)
     .find_map(|column| {
@@ -432,7 +433,8 @@ fn click_at(
   now: std::time::Instant,
 ) -> Result<()> {
   use vpdf_model::input::{Button, KeyModifiers, Mouse, MouseKind, Spot};
-  for kind in [MouseKind::Press(Button::LEFT), MouseKind::Release(Button::LEFT)]
+  for kind in
+    [MouseKind::Press(Button::new(1)), MouseKind::Release(Button::new(1))]
   {
     let at = Spot::Cell { column, row };
     let mouse = Mouse { kind, at, modifiers: KeyModifiers::NONE };
@@ -488,7 +490,7 @@ fn notes_open_by_mouse() -> Result<()> {
   let start = std::time::Instant::now();
   let later = |ms| start + std::time::Duration::from_millis(ms);
   click_at(&mut session, icon, later(0))?;
-  let frame = crate::common::focused_frame(&mut session)?;
+  let frame = crate::harness::draw(&mut session)?;
   assert!(frame.contains("margin note"));
   let app = session.app().unwrap();
   assert_eq!(app.input_owner(), InputOwner::Peek);
@@ -502,7 +504,7 @@ fn notes_open_by_mouse() -> Result<()> {
   // The menu's Show note sits by the icon too.
   crate::mouse::tap(&mut session, MouseButton::Right, icon)?;
   crate::mouse::choose(&mut session, "Show note")?;
-  crate::common::focused_frame(&mut session)?;
+  crate::harness::draw(&mut session)?;
   let app = session.app().unwrap();
   let area = app.preview_cells().expect("a drawn popup");
   assert!(near(area.row) || near(area.row + area.rows), "{area:?} {icon:?}");
@@ -536,7 +538,7 @@ fn notes_open_by_mouse() -> Result<()> {
     app.overlays.menu_mut().unwrap().select(index.expect(label));
     keys(app, b"\r")?;
     let comment = "check this note please";
-    let frame = crate::common::focused_frame(&mut session)?;
+    let frame = crate::harness::draw(&mut session)?;
     assert_eq!(frame.contains(comment), shown, "{label}");
     let app = session.app().unwrap();
     let register = app.reader.register('"').map(|text| &**text);
@@ -662,7 +664,7 @@ fn note_row_menus_show_notes() -> Result<()> {
   let mut session = noted_session(directory.path())?;
   session.app().unwrap().open_panel(PanelKind::Annotations)?;
   crate::common::annotations_loaded(session.app().unwrap())?;
-  session.draw_focused(&mut Vec::new())?;
+  session.draw_frame(&mut Vec::new())?;
   // Row 1 is the page heading; row 2 the unnoted highlight.
   crate::mouse::right(&mut session, (1, 3))?;
   let app = session.app().unwrap();

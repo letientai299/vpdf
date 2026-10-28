@@ -207,25 +207,4 @@ impl Pane {
       Body::Recent(home) => home.scene(painter),
     }
   }
-
-  pub fn draw_alone(
-    &mut self,
-    graphics: &mut vpdf_terminal::graphics::Graphics,
-    out: &mut impl std::io::Write,
-  ) -> Result<()> {
-    match &mut self.body {
-      Body::Document(app) => app.draw_alone(graphics, out),
-      Body::Recent(home) => {
-        write!(out, "{}", vpdf_terminal::terminal::frame_start())?;
-        graphics.begin(out)?;
-        crate::presentation::draw(out, Some(graphics), |scene| {
-          home.scene(scene)
-        })??;
-        graphics.end(out)?;
-        write!(out, "{}", vpdf_terminal::terminal::frame_end())?;
-        out.flush()?;
-        Ok(())
-      }
-    }
-  }
 }

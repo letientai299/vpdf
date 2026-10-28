@@ -331,8 +331,4 @@ impl Panel {
       format!(" · {count} selected")
     }
   }
-
-  pub fn set_picker(&mut self, picker: crate::home::Picker) {
-    self.picker = picker;
-  }
 }

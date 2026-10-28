@@ -320,7 +320,7 @@ fn marks_remove_by_key_and_click() -> Result<()> {
   for (column, removed) in [(22, false), (2, true)] {
     session.app().unwrap().panel.as_mut().unwrap().view.choose(1);
     recent_key(&mut session, KeyCode::Char('x'))?;
-    session.draw_focused(&mut Vec::new())?;
+    session.draw_frame(&mut Vec::new())?;
     let app = session.app().unwrap();
     let row = app.at.row + app.screen.rows - 2;
     let column = app.at.column + column;

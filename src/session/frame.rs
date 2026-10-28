@@ -113,13 +113,6 @@ impl Session {
       if moved && !following { Rehover::Due } else { Rehover::Settled };
   }
 
-  /// One frame of the focused pane alone, as tests drive it.
-  #[doc(hidden)]
-  pub fn draw_focused(&mut self, out: &mut impl Write) -> Result<()> {
-    let tab = &mut self.tabs[self.active];
-    tab.panes[tab.focus].draw_alone(&mut self.graphics, out)
-  }
-
   pub(super) fn perf_tick(&mut self, out: &mut impl Write) -> Result<()> {
     let on = self.state.perf && self.sight != Sight::Hidden;
     self.perf.running(on);

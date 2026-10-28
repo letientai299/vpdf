@@ -669,11 +669,11 @@ fn tracking_copies_preserve_independent_feedback() -> Result<()> {
   let mut pane = Pane::default();
   fixture.bind(&mut pane).land_at(position)?;
   pane.aim(Target::Page(PageId(0)));
-  pane.animate_to(200.0, now);
+  fixture.bind(&mut pane).animation.start(200.0, now);
   pane.flash(position, Span::Glyph, now);
   let copy = Pane::new((*pane).clone(), pane.tracking().clone());
   pane.cancel_scroll();
-  pane.clear_target();
+  *fixture.bind(&mut pane).target = None;
   pane.expire_flash(now + crate::page::landing::Landing::DURATION);
   assert_eq!(copy.target(), Some(position));
   assert_eq!(copy.animation().target(), Some(200.0));
@@ -899,7 +899,7 @@ fn preparation_preserves_pending_operators() {
   reader.enter_cursor();
   reader.operator = Some(Operator { count: 2, register: 'a' });
   let mut pane = Pane::new(reader, Tracking::default());
-  pane.animate_to(200.0, Instant::now());
+  Fixture::new().bind(&mut pane).animation.start(200.0, Instant::now());
   assert!(pane.prepare(Action::Zoom(1)));
   assert_eq!(pane.scroll, 200.0);
   assert!(!pane.animation().active());

@@ -91,7 +91,7 @@ pub(super) fn open(
     app.open_panel(vpdf_ui::keys::PanelKind::Text)?;
     app.close_panel()?;
   }
-  session.draw_focused(&mut Vec::new())?;
+  session.draw_frame(&mut Vec::new())?;
   let app = session.app().unwrap();
   assert_eq!(app.text_mode, text_mode);
   Ok((directory, session))
@@ -297,7 +297,7 @@ fn wrapped_links_tint_whole() -> Result<()> {
     let (_directory, mut session) =
       open(|path| parts_pdf(path, parts), text_mode)?;
     let mut plain = Vec::new();
-    session.draw_focused(&mut plain)?;
+    session.draw_frame(&mut plain)?;
     // Hints list the address once.
     session.app().unwrap().start_hints(false)?;
     let hints = session
@@ -334,7 +334,7 @@ fn wrapped_links_tint_whole() -> Result<()> {
       let segments = session.app().unwrap().hover_segments().len();
       assert_eq!(segments, want, "text={text_mode} link {index}");
       let mut tinted = Vec::new();
-      session.draw_focused(&mut tinted)?;
+      session.draw_frame(&mut tinted)?;
       let (plain, tinted) =
         (String::from_utf8_lossy(&plain), String::from_utf8_lossy(&tinted));
       let drawn = if text_mode {
@@ -690,11 +690,11 @@ fn clicks_mark_their_target() -> Result<()> {
     let mut frame = Vec::new();
     for _ in 0..2 {
       frame.clear();
-      session.draw_focused(&mut frame)?;
+      session.draw_frame(&mut frame)?;
     }
     session.app().unwrap().reader.clear_flash();
     let mut plain = Vec::new();
-    session.draw_focused(&mut plain)?;
+    session.draw_frame(&mut plain)?;
     assert_eq!(frame != plain, marked, "{case}");
   }
   Ok(())
@@ -1082,7 +1082,7 @@ fn text_edge_drags_track_the_pointer() -> Result<()> {
   for _ in 0..3 {
     mouse(&mut session, MouseEventKind::Drag(MouseButton::Left), edge)?;
   }
-  session.draw_focused(&mut Vec::new())?;
+  session.draw_frame(&mut Vec::new())?;
   let app = session.app().unwrap();
   let under = app.text().position(edge.0, edge.1)?;
   assert_eq!(app.reader.cursor.line, under.line);
@@ -1369,7 +1369,7 @@ fn alt_drags_capture_regions() -> Result<()> {
   let to = glyph_cell(&mut session, 1, 9)?;
   let backdrops = |session: &mut Session| -> Result<usize> {
     let mut frame = Vec::new();
-    session.draw_focused(&mut frame)?;
+    session.draw_frame(&mut frame)?;
     Ok(String::from_utf8_lossy(&frame).matches("z=-1").count())
   };
   let before = backdrops(&mut session)?;
@@ -1515,7 +1515,7 @@ fn sweeps_stay_on_page() -> Result<()> {
   for _ in 0..4 {
     action(session.app().unwrap(), Action::Zoom(-1))?;
   }
-  session.draw_focused(&mut Vec::new())?;
+  session.draw_frame(&mut Vec::new())?;
   let from = glyph_cell(&mut session, 0, 2)?;
   let edge = (session.app().unwrap().screen.columns - 1, from.1 + 2);
   let app = session.app().unwrap();
@@ -1998,7 +1998,7 @@ fn hint_labels_keep_off_neighbours() -> Result<()> {
     let app = session.app().unwrap();
     app.text_mode = text_mode;
     app.command(&page.to_string())?;
-    session.draw_focused(&mut Vec::new())?;
+    session.draw_frame(&mut Vec::new())?;
     let app = session.app().unwrap();
     app.start_hints(false)?;
     let hints = app.overlays.close_hints().expect("hints");

@@ -23,10 +23,6 @@ impl App {
     )
   }
 
-  pub fn bar_until(&self) -> Option<Instant> {
-    self.bar.deadline()
-  }
-
   pub fn bar_expired(&mut self, now: Instant) -> bool {
     self.bar.expire(now)
   }

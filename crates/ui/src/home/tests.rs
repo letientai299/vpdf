@@ -119,7 +119,7 @@ fn zero_size_skips_drawing() -> Result<()> {
     assert_eq!(
       home.event(
         Event::Mouse(Mouse {
-          kind: MouseKind::Press(Button::LEFT),
+          kind: MouseKind::Press(Button::new(1)),
           at: Spot::Cell { column: 0, row: 0 },
           modifiers: KeyModifiers::NONE,
         }),

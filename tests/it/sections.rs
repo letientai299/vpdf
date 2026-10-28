@@ -52,7 +52,7 @@ fn section_boundaries_and_counts() -> Result<()> {
         app.reader.cancel();
         let start =
           Position { line: second.line + if body { 2 } else { 0 }, ..second };
-        app.reader.point_to(start);
+        app.reading_view().restore_position(start)?;
         app.reader.seed_reader(|reader| reader.cursor = start);
         let start_scroll = scroll + if body { 40.0 } else { 0.0 };
         app.reader.seed_reader(|reader| reader.scroll = start_scroll);
@@ -66,7 +66,16 @@ fn section_boundaries_and_counts() -> Result<()> {
         } else {
           // The viewport must win over stale targets.
           app.reader.seed_reader(|reader| reader.cursor = Position::default());
-          app.reader.point_to(second);
+          let cursor = app.reader.cursor;
+          let location = app.reading_view().location()?;
+          app.reading_view().restore_location(
+            vpdf_reader::reader::Location {
+              cursor,
+              target: Some(second),
+              ..location
+            },
+          )?;
+          assert_eq!(app.reader.cursor, cursor);
         }
         app.reader.clear_history();
         let original = (app.reader.scroll, app.navigation_position());
@@ -184,7 +193,14 @@ fn section_repeat_landing() -> Result<()> {
     let (_, second) = heading(&mut app, 1)?;
     app.reader.seed_reader(|reader| reader.scroll = second + 40.0);
     app.reader.seed_reader(|reader| reader.cursor = Position::default());
-    app.reader.clear_target();
+    let cursor = app.reader.cursor;
+    let location = app.reading_view().location()?;
+    app.reading_view().restore_location(vpdf_reader::reader::Location {
+      cursor,
+      target: None,
+      ..location
+    })?;
+    assert_eq!(app.reader.cursor, cursor);
     for (bytes, index) in [(b"[[", 1), (b"[[", 0), (b"]]", 1), (b"]]", 2)] {
       keys(&mut app, bytes)?;
       let (position, scroll) = heading(&mut app, index)?;
@@ -341,7 +357,14 @@ fn section_pan_invalidates_landing() -> Result<()> {
   app.screen.rows = u16::MAX;
   app.layout.request_zoom(vpdf_ui::layout::Zoom::To(2.0));
   app.relayout()?;
-  app.reader.clear_target();
+  let cursor = app.reader.cursor;
+  let location = app.reading_view().location()?;
+  app.reading_view().restore_location(vpdf_reader::reader::Location {
+    cursor,
+    target: None,
+    ..location
+  })?;
+  assert_eq!(app.reader.cursor, cursor);
   keys(&mut app, b"]]")?;
   let first = heading(&mut app, 0)?.0;
   assert_eq!(app.reader.cursor, first);

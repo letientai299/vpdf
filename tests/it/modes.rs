@@ -13,14 +13,9 @@ pub(super) fn app(file: &str, text: bool) -> Result<Solo> {
 }
 
 pub(super) fn settle(app: &mut App) {
-  for _ in 0..40 {
-    if let Some(target) = app.reader.animation().target() {
-      app.reader.animate_to(
-        target,
-        Instant::now().checked_sub(Duration::from_millis(16)).unwrap(),
-      );
-    }
-    if !app.animate() {
+  let now = Instant::now();
+  for tick in 1..=40 {
+    if !app.reader.animate(now + Duration::from_millis(16 * tick)) {
       return;
     }
   }

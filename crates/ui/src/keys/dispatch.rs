@@ -123,13 +123,6 @@ impl Keys {
     *self = Self::default();
   }
 
-  pub fn feed_region(&mut self, key: KeyEvent) -> Option<Input> {
-    match self.feed_with(key, Context::Region, &Bindings::default())? {
-      Dispatch::Input(input) => Some(input),
-      Dispatch::Command(_) => None,
-    }
-  }
-
   pub fn feed(&mut self, key: KeyEvent, grammar: Grammar) -> Option<Input> {
     let context = match grammar {
       Grammar::Normal => Context::Normal,

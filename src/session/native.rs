@@ -2,6 +2,7 @@
 use super::Pane;
 use super::interaction::Interaction;
 use super::maintenance::Chores;
+use super::run::report;
 use super::unlock::Operation;
 use super::{Screen, Session};
 use crate::Result;
@@ -905,14 +906,6 @@ fn ensure_home(session: &mut Session, screen: Screen) {
   }
 }
 
-fn report(session: &mut Session, result: Result<()>) {
-  if let Err(error) = result
-    && !session.tabs.is_empty()
-  {
-    session.focused_mut().fail(error.to_string());
-  }
-}
-
 fn completions(
   session: &mut Session,
   cache: &mut Cache<TileId, Arc<Vec<u8>>>,
@@ -1310,9 +1303,14 @@ mod tests {
   fn reduced_motion_settles_navigation() -> Result<()> {
     let mut screen = sized();
     let (_root, _path, mut session) = opened(&["navigation"], screen)?;
+    let app = session.app().unwrap();
+    app.text_mode = false;
+    app.layout.request_zoom(vpdf_ui::layout::Zoom::To(3.0));
+    app.relayout()?;
+    app.reading_view().scrub_scroll(0.0);
+    app.scroll(100.0)?;
     let now = Instant::now();
     let mut due = now + Duration::from_secs(1);
-    session.app().unwrap().reader.animate_to(100.0, now);
     assert!(apply(&mut session, Input::ReduceMotion(true), &mut screen));
     assert!(!apply(&mut session, Input::ReduceMotion(true), &mut screen));
     assert!(animate(&mut session, &mut due, now));
@@ -1320,7 +1318,7 @@ mod tests {
     assert_eq!(session.app().unwrap().reader.scroll, 100.0);
     assert!(!animate(&mut session, &mut due, now));
     assert!(apply(&mut session, Input::ReduceMotion(false), &mut screen));
-    session.app().unwrap().reader.animate_to(200.0, now);
+    session.app().unwrap().scroll(100.0)?;
     animate(&mut session, &mut due, now);
     assert!(session.app().unwrap().reader.animation().active());
     Ok(())
@@ -1494,11 +1492,9 @@ mod tests {
     session.app().unwrap().command("vsplit")?;
     session.settle()?;
     let tab = &mut session.tabs[session.active];
-    tab.panes[1 - tab.focus]
-      .document_mut()
-      .unwrap()
-      .reader
-      .animate_to(100.0, started);
+    let app = tab.panes[1 - tab.focus].document_mut().unwrap();
+    assert!(!app.text_mode);
+    app.scroll(100.0)?;
     let split = frame_metrics(&session, started, &cache, &visible);
     assert!(split.animating && split.observation.animating);
     Ok(())
@@ -1600,8 +1596,12 @@ mod tests {
   #[test]
   fn unrelated_wakes_keep_animation_deadline() -> Result<()> {
     let (_root, _, mut session) = opened(&["first", "second"], sized())?;
+    let app = session.app().unwrap();
+    app.text_mode = false;
+    app.relayout()?;
+    app.reading_view().scrub_scroll(0.0);
+    app.scroll(100.0)?;
     let start = Instant::now();
-    session.app().unwrap().reader.animate_to(100.0, start);
     let mut due = start + ANIMATION;
     let mut chores = Chores::new(start);
     let mut screen = sized();

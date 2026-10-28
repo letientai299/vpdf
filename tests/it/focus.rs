@@ -4,6 +4,7 @@ use vpdf::Result;
 use vpdf::app::App;
 use vpdf::pdf_text::PdfText;
 use vpdf::session::Session;
+use vpdf::trace::Drawable;
 use vpdf_model::document::Target;
 use vpdf_model::input::Event;
 use vpdf_model::text::{PageId, Position};
@@ -134,7 +135,7 @@ fn recent_split_reuses_target() -> Result<()> {
     vec![row(Destination::File(file("book.pdf")?))],
   )?;
   let middle = b"\x1b[<1;2;2M\x1b[<1;2;2m";
-  session.draw_focused(&mut Vec::new())?;
+  session.draw_frame(&mut Vec::new())?;
   send(&mut session, middle)?;
   assert_eq!(session.tabs.len(), 1);
   assert_eq!(session.tab().panes.len(), 2);
@@ -144,7 +145,7 @@ fn recent_split_reuses_target() -> Result<()> {
   assert!(session.app().unwrap().reader.selection.is_some());
   send(&mut session, b"\x17p")?;
   assert_eq!(session.app().unwrap().id, source);
-  session.draw_focused(&mut Vec::new())?;
+  session.draw_frame(&mut Vec::new())?;
   send(&mut session, middle)?;
   assert_eq!(session.app().unwrap().id, source);
   assert!(session.app().unwrap().panel_focused());
@@ -483,7 +484,7 @@ fn middle_click_preserves_marks() -> Result<()> {
     PanelKind::Recent,
     vec![row(Destination::File(file("book.pdf")?))],
   )?;
-  session.draw_focused(&mut Vec::new())?;
+  session.draw_frame(&mut Vec::new())?;
   send(&mut session, b"\x1b[<1;2;2M\x1b[<1;2;2m")?;
   assert_eq!(session.app().unwrap().id, source);
   assert!(session.app().unwrap().panel_focused());
@@ -518,7 +519,7 @@ fn outline_row_survives_focus_and_draw() -> Result<()> {
   let state =
     (panel.view.selected(), panel.view.top(), panel.view.query().to_owned());
   keys(app, b"\t")?;
-  session.draw_focused(&mut Vec::new())?;
+  session.draw_frame(&mut Vec::new())?;
   let app = session.app().unwrap();
   keys(app, b"\x1b[Z")?;
   let panel = app.panel.as_ref().unwrap();
@@ -537,8 +538,8 @@ fn outline_row_survives_focus_and_draw() -> Result<()> {
   assert!(top < state.1);
   assert_eq!(panel.view.selected(), state.0);
   assert_eq!(app.input_owner(), InputOwner::Content);
-  session.draw_focused(&mut Vec::new())?;
-  session.draw_focused(&mut Vec::new())?;
+  session.draw_frame(&mut Vec::new())?;
+  session.draw_frame(&mut Vec::new())?;
   let app = session.app().unwrap();
   assert_eq!(app.panel.as_ref().unwrap().view.top(), top);
   assert_eq!(app.panel.as_ref().unwrap().view.selected(), state.0);
@@ -557,7 +558,7 @@ fn narrow_recent_press_restores_cover_geometry() -> Result<()> {
   assert!(session.focused().is_recent());
   assert_eq!(session.focused().id, id);
   let mut out = Vec::new();
-  session.draw_focused(&mut out)?;
+  session.draw_frame(&mut out)?;
   assert!(String::from_utf8_lossy(&out).contains("RECENT"));
   Ok(())
 }

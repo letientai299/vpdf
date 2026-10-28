@@ -21,7 +21,7 @@ fn app() -> Result<(tempfile::TempDir, App)> {
 
 fn loaded(app: &mut App) -> Result<()> {
   let start = Instant::now();
-  while app.annotations_pending() {
+  while app.sidebar.slot.queued || app.sidebar.annotations.pending() {
     app.sidebar_updates()?;
     anyhow::ensure!(
       start.elapsed() < Duration::from_secs(5),
@@ -51,7 +51,8 @@ fn opening_is_cancelable() -> Result<()> {
   app.cancel_sidebars();
   assert!(stopped.recv_timeout(Duration::from_secs(5))?);
   app.prepare_sidebars();
-  assert!(!app.annotations_pending());
+  assert!(!app.sidebar.slot.queued);
+  assert!(!app.sidebar.annotations.pending());
   app.open_panel(kind)?;
   loaded(&mut app)?;
   let rows = app.panel.as_ref().unwrap().view.rows();
@@ -71,7 +72,7 @@ fn workers_wait_for_their_slot() -> Result<()> {
   app.want_annotations();
   app.sidebar_updates()?;
   assert!(!app.annotations_loading());
-  assert!(app.annotations_pending(), "queued loads are pending");
+  assert!(app.sidebar.slot.queued);
   app.prepare_sidebars();
   assert!(!app.sidebars_deferred(), "queued loads let the loop sleep");
   drop(held);

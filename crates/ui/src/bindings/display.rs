@@ -1,6 +1,5 @@
 use super::{
-  Bindings, Change, Context, Control, Map, PromptAction, Sequence, Target,
-  actions,
+  Bindings, Change, Context, Control, Map, Sequence, Target, actions,
 };
 use crate::keys::{self, Action};
 use serde::{Serialize, Serializer};
@@ -311,13 +310,5 @@ impl Bindings {
       .filter(|hint| !hint.is_empty())
       .collect::<Vec<_>>()
       .join("; ")
-  }
-
-  pub fn prompt_key(
-    &self,
-    kind: crate::prompt::PromptKind,
-    action: PromptAction,
-  ) -> String {
-    self.shortcut(Context::prompt(kind), &Target::Prompt(action))
   }
 }

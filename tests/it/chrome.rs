@@ -1,5 +1,6 @@
 //! Middle button, chrome, and dividers.
 use super::common::SeedReader;
+use vpdf::trace::Drawable;
 
 use crate::harness::{
   cell_in, corpus, draw as status, mouse, pane, press, screen,
@@ -352,7 +353,7 @@ fn recent_menus_open_rows() -> Result<()> {
   let (_directory, mut session) = session(false)?;
   let path = session.app()?.path.clone();
   session.command("recent")?;
-  session.draw_focused(&mut Vec::new())?;
+  session.draw_frame(&mut Vec::new())?;
   keys(&mut session, "\r")?;
   assert_eq!(session.app()?.path, path);
   assert_eq!(session.tabs.len(), 1);
@@ -902,12 +903,12 @@ fn clues_and_completions_highlight_on_hover() -> Result<()> {
     .filter(|other| *other != index)
     .find_map(|other| item_cell(&mut session, List::Clues, other).ok());
   mouse(&mut session, MouseEventKind::Moved, other.expect("another clue"))?;
-  assert!(!drawn(&mut session)?.contains(&badge(&label)));
+  assert!(!status(&mut session)?.contains(&badge(&label)));
   // Same shape, another item.
   assert!(mouse(&mut session, MouseEventKind::Moved, at)?, "a frame");
-  assert!(drawn(&mut session)?.contains(&badge(&label)));
+  assert!(status(&mut session)?.contains(&badge(&label)));
   assert!(mouse(&mut session, MouseEventKind::Moved, page)?, "a frame");
-  assert!(!drawn(&mut session)?.contains(&badge(&label)));
+  assert!(!status(&mut session)?.contains(&badge(&label)));
   // Hover marks a completion; the chosen one and the line stay.
   press(&mut session, b"\x1b")?;
   keys(&mut session, ":tab")?;
@@ -925,10 +926,10 @@ fn clues_and_completions_highlight_on_hover() -> Result<()> {
   let first = item_cell(&mut session, List::Completions, 0)?;
   let at = item_cell(&mut session, List::Completions, 1)?;
   mouse(&mut session, MouseEventKind::Moved, first)?;
-  assert!(!drawn(&mut session)?.contains(&pointed(&label)));
+  assert!(!status(&mut session)?.contains(&pointed(&label)));
   // Same shape, another item.
   assert!(mouse(&mut session, MouseEventKind::Moved, at)?, "a frame");
-  let shown = drawn(&mut session)?;
+  let shown = status(&mut session)?;
   assert!(shown.contains(&pointed(&label)), "{shown:?}");
   let marked = chosen.as_ref().is_some_and(|c| shown.contains(&badge(c)));
   assert!(marked, "{shown:?}");
@@ -962,11 +963,6 @@ fn section_clicks_select_their_entry() -> Result<()> {
   Ok(())
 }
 
-/// The draw of the focused pane alone.
-fn drawn(session: &mut Session) -> Result<String> {
-  crate::common::focused_frame(session)
-}
-
 #[test]
 fn scrollbars_show_near_the_edge_and_after_scrolls() -> Result<()> {
   for text_mode in [false, true] {
@@ -982,33 +978,28 @@ fn scrollbars_show_near_the_edge_and_after_scrolls() -> Result<()> {
     // Resting, hovering, and scrolling frames.
     // The track places in the last column.
     let track = format!(";{}H\x1b_Ga=p", edge + 1);
-    assert!(!drawn(&mut session)?.contains(&track), "hidden at rest");
-    session.app().unwrap().hover.point(
-      Hit::Scrollbar,
-      None,
-      std::time::Instant::now,
-    );
-    assert!(drawn(&mut session)?.contains(&track), "shown near the edge");
-    session.app().unwrap().hover.point(
-      Hit::Nothing,
-      None,
-      std::time::Instant::now,
-    );
+    assert!(!status(&mut session)?.contains(&track), "hidden at rest");
+    mouse(&mut session, MouseEventKind::Moved, (edge, 5))?;
+    assert!(status(&mut session)?.contains(&track), "shown near the edge");
+    mouse(&mut session, MouseEventKind::Moved, (0, 0))?;
     session.app().unwrap().reader.seed_reader(|reader| reader.scroll += 32.0);
-    assert!(drawn(&mut session)?.contains(&track), "shown after a scroll");
+    assert!(status(&mut session)?.contains(&track), "shown after a scroll");
     // Relayouts are no scrolls.
     session.app().unwrap().bar_expired(
       std::time::Instant::now() + std::time::Duration::from_secs(9),
     );
     keys(&mut session, "go")?;
-    drawn(&mut session)?;
-    assert_eq!(session.app().unwrap().bar_until(), None, "panels show no bar");
+    status(&mut session)?;
+    assert!(
+      !session.app().unwrap().bar_expired(
+        std::time::Instant::now() + std::time::Duration::from_secs(9)
+      ),
+      "panels show no bar"
+    );
     keys(&mut session, "q")?;
     session.app().unwrap().reader.seed_reader(|reader| reader.scroll += 16.0);
-    drawn(&mut session)?;
-    let until = session.app().unwrap().bar_until();
-    let later =
-      until.expect("a deadline") + std::time::Duration::from_millis(1);
+    status(&mut session)?;
+    let later = std::time::Instant::now() + std::time::Duration::from_secs(9);
     assert!(session.app().unwrap().bar_expired(later));
     assert!(!session.app().unwrap().bar_expired(later), "expires once");
   }
@@ -1028,7 +1019,7 @@ fn track_presses_jump_and_drags_scrub() -> Result<()> {
   left(&mut session, Down(L), (edge, rows / 2));
   let scroll = session.app().unwrap().reader.scroll;
   assert!((scroll / room - 0.5).abs() < 0.05, "{scroll} of {room}");
-  let label = drawn(&mut session)?;
+  let label = status(&mut session)?;
   assert!(label.contains(" p. "), "scrubs show a page label");
   // Thumb presses grip; drags move it.
   let (_directory, mut grabbed) = crate::mouse::session(false)?;
@@ -1045,7 +1036,7 @@ fn track_presses_jump_and_drags_scrub() -> Result<()> {
   // A lost release ends the scrub.
   left(&mut grabbed, Down(L), (edge, 2));
   assert!(left(&mut grabbed, MouseEventKind::Moved, (10, 10)));
-  assert!(!drawn(&mut grabbed)?.contains(" p. "));
+  assert!(!status(&mut grabbed)?.contains(" p. "));
   // Drags reach the end; releases end.
   left(&mut session, Drag(L), (edge, rows));
   assert_eq!(session.app().unwrap().reader.scroll, room);
@@ -1057,7 +1048,7 @@ fn track_presses_jump_and_drags_scrub() -> Result<()> {
   );
   left(&mut session, Drag(L), (edge, rows));
   left(&mut session, Up(L), (edge, rows));
-  assert!(!drawn(&mut session)?.contains(" p. "));
+  assert!(!status(&mut session)?.contains(" p. "));
   assert_eq!(session.app().unwrap().reader.selection, None, "no text selects");
   // Ctrl-o returns from the jump.
   press(&mut session, b"\x0f")?;
@@ -1138,31 +1129,28 @@ fn scrollbars_track_searches_follows_and_panes() -> Result<()> {
       .map(|part| part.split(",i=").next().unwrap_or("").to_owned())
       .collect()
   };
-  session.app().unwrap().hover.point(
-    Hit::Scrollbar,
-    None,
-    std::time::Instant::now,
-  );
+  mouse(&mut session, Moved, (edge, 5))?;
   let query = vpdf_search::query::Query::default();
   session.app().unwrap().search.show(query.clone(), vec![hit(0)]);
-  let first = track(drawn(&mut session)?);
+  let first = track(status(&mut session)?);
   session.app().unwrap().search.show(query, vec![hit(1)]);
-  assert_ne!(track(drawn(&mut session)?), first, "ticks follow the search");
-  session.app().unwrap().hover.point(
-    Hit::Nothing,
-    None,
-    std::time::Instant::now,
-  );
+  assert_ne!(track(status(&mut session)?), first, "ticks follow the search");
+  mouse(&mut session, Moved, (0, 0))?;
   // Following an outline entry shows the bar.
   session
     .app()
     .unwrap()
     .bar_expired(std::time::Instant::now() + std::time::Duration::from_secs(9));
   keys(&mut session, "+++")?;
-  drawn(&mut session)?;
+  status(&mut session)?;
   keys(&mut session, "go")?;
-  drawn(&mut session)?;
-  assert_eq!(session.app().unwrap().bar_until(), None, "panels show no bar");
+  status(&mut session)?;
+  assert!(
+    !session.app().unwrap().bar_expired(
+      std::time::Instant::now() + std::time::Duration::from_secs(9)
+    ),
+    "panels show no bar"
+  );
   keys(&mut session, "q=")?;
   // Pinned thumbs' labels follow the pointer.
   session.app().unwrap().reader.seed_reader(|reader| reader.scroll = 0.0);
@@ -1170,7 +1158,7 @@ fn scrollbars_track_searches_follows_and_panes() -> Result<()> {
   assert!(left(&mut session, Drag(L), (edge, 0)), "the label moves");
   // Motionless presses end lost scrubs.
   left(&mut session, Down(L), (5, 5));
-  assert!(!drawn(&mut session)?.contains(" p. "));
+  assert!(!status(&mut session)?.contains(" p. "));
   // Presses elsewhere end this pane's scrub.
   session.app().unwrap().command("vsplit")?;
   session.settle()?;
@@ -1182,7 +1170,7 @@ fn scrollbars_track_searches_follows_and_panes() -> Result<()> {
   left(&mut session, Down(L), (edge + 10, 5));
   let tab = session.tab();
   tab.focus = tab.panes.iter().position(|app| app.id == id).unwrap();
-  let label = drawn(&mut session)?;
+  let label = status(&mut session)?;
   assert!(!label.contains(" p. "), "blurred panes end scrubs");
   Ok(())
 }
@@ -1194,16 +1182,16 @@ fn outline_follows_show_the_scrollbar() -> Result<()> {
   app.layout.request_zoom(vpdf_ui::layout::Zoom::To(3.0));
   app.relayout()?;
   keys(&mut session, "go")?;
-  drawn(&mut session)?;
+  status(&mut session)?;
   let start = session.app().unwrap().reader.scroll;
   let later = std::time::Instant::now() + std::time::Duration::from_secs(9);
   session.app().unwrap().bar_expired(later);
   press(&mut session, b"\r")?;
   session.settle()?;
-  drawn(&mut session)?;
+  status(&mut session)?;
   let app = session.app().unwrap();
   assert_ne!(app.reader.scroll.to_bits(), start.to_bits(), "the row moves");
-  assert!(app.bar_until().is_some(), "followed rows show the bar");
+  assert!(app.bar_expired(later), "followed rows show the bar");
   Ok(())
 }
 

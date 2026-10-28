@@ -385,7 +385,7 @@ impl Session {
   #[cfg(test)]
   fn start_at(&mut self, page: usize) -> Result<()> {
     self.activate(0)?;
-    self.app()?.reading_view().open_page(PageId(page - 1))
+    self.app()?.reading_view().go_to_page(PageId(page - 1))
   }
 
   /// Records the focused pane and new history in memory, where the

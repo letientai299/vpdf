@@ -202,10 +202,6 @@ impl Layout {
     self.pan = self.pan.clamp(0.0, self.pan_limit(page));
   }
 
-  pub fn relocate(&mut self, origin: (u16, u16)) {
-    self.screen.origin = origin;
-  }
-
   pub fn resize(
     &mut self,
     screen: Screen,
@@ -522,7 +518,7 @@ mod tests {
   fn anchors_survive_reflow() {
     let mut layout = Layout::new([PAPER], screen());
     let before = layout.checkpoint(PageId(0));
-    layout.relocate((12, 6));
+    layout.resize(Screen { origin: (12, 6), ..screen() }, [PAPER]);
     assert_eq!(layout.checkpoint(PageId(0)), before);
     let point = (180.0, 210.0);
     let at = (250.0, 100.0);

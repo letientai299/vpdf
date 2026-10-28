@@ -115,13 +115,6 @@ impl App {
       _ => self.sidebar.previous.clone(),
     }
   }
-  pub fn annotations_pending(&self) -> bool {
-    self.annotations_queued() || self.sidebar.annotations.pending()
-  }
-  /// The load waits for its slot's worker to end.
-  pub(crate) fn annotations_queued(&self) -> bool {
-    self.sidebar.slot.queued
-  }
   pub(crate) fn annotations_loading(&self) -> bool {
     matches!(self.sidebar.annotations, Load::Running(_))
   }

@@ -278,10 +278,6 @@ impl Shelf {
     }
   }
 
-  pub fn set_pages(&mut self, path: PathBuf, pages: usize) {
-    self.accept_count(self.generation, path, Ok(pages));
-  }
-
   pub fn take_counts(&mut self) -> Option<CountsRequest> {
     self.count_request.take()
   }
@@ -379,19 +375,6 @@ impl Shelf {
     let thumb = card.facts.as_ref().ok().and_then(|f| f.thumb.as_ref());
     let weight = thumb.map_or(1, |thumb| thumb.pixels().len());
     self.cards.insert(path, card, weight);
-  }
-
-  pub fn list_columns(panel: &Panel, width: u16) -> u16 {
-    panel.shelf.as_ref().map_or(width, |shelf| {
-      Geometry::new(
-        width,
-        panel.height,
-        shelf.preferences.beside,
-        shelf.preferences.below,
-      )
-      .list
-      .columns
-    })
   }
 
   pub fn edge_at(&self, column: u16, row: u16) -> Option<bool> {
@@ -1493,7 +1476,8 @@ mod presentation_tests {
       });
     }
     let mut panel = Panel::recent(rows, &entries);
-    panel.shelf_mut().unwrap().set_pages(entries[0].path.clone(), 10);
+    let shelf = panel.shelf_mut().unwrap();
+    shelf.accept_count(shelf.generation, entries[0].path.clone(), Ok(10));
     let screen = crate::testing::screen::cells(48, 32);
     let mut recorder = crate::testing::empty();
     panel.scene(
@@ -1571,7 +1555,6 @@ mod review_tests {
     );
     let screen = crate::testing::screen::cells(120, 60);
     panel.resize(screen.rows);
-    assert_eq!(Shelf::list_columns(&panel, screen.columns), 90);
     let mut scene = crate::testing::empty();
     panel.scene(
       &mut scene,

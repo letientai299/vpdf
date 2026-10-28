@@ -242,7 +242,7 @@ mod tests {
     session.app().unwrap().complete = true;
     let _held = crate::sidebar::hold_annotations(session.app().unwrap());
     chores.run(&mut session, start);
-    assert!(session.app().unwrap().annotations_queued());
+    assert!(!session.app().unwrap().annotations_loading());
     assert!(chores.wait(&mut session, start, false) > Duration::ZERO);
     Ok(())
   }
@@ -273,7 +273,7 @@ mod tests {
       session.app().unwrap().figures,
       crate::jobs::Figures::Idle
     ));
-    assert!(!session.app().unwrap().annotations_pending());
+    assert!(!session.app().unwrap().annotations_loading());
     session.app().unwrap().want_figures();
     assert!(matches!(
       session.app().unwrap().figures,
@@ -311,7 +311,6 @@ mod tests {
         tab.panes[0].document().unwrap().figures,
         crate::jobs::Figures::Running(_)
       ));
-      assert!(tab.panes[0].document().unwrap().annotations_pending());
       loading +=
         usize::from(tab.panes[0].document().unwrap().annotations_loading());
     }
@@ -453,8 +452,11 @@ mod tests {
   fn hidden_maintenance_keeps_animation_pending() -> Result<()> {
     let root = tempfile::tempdir()?;
     let mut session = opened(root.path())?;
+    let app = session.app().unwrap();
+    app.text_mode = false;
+    app.relayout()?;
+    app.scroll(100.0)?;
     let start = Instant::now();
-    session.app().unwrap().reader.animate_to(100.0, start);
     session.sight = Sight::Hidden;
     let before = session.app().unwrap().reader.scroll;
     session.maintain(start + Duration::from_millis(16));

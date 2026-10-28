@@ -53,9 +53,6 @@ pub struct Uploads {
 }
 
 impl Uploads {
-  pub fn capacity(&self) -> usize {
-    self.slots.len() * SLOT_BYTES as usize
-  }
   pub fn new(state: egui_wgpu::RenderState) -> Self {
     Self { state, slots: Vec::new(), commands: None, retired: Arc::default() }
   }
@@ -214,7 +211,6 @@ mod tests {
     let handles: Vec<_> =
       (0..SLOTS).map(|_| uploads.upload(&[1, 2, 3], [1, 1]).unwrap()).collect();
     assert!(uploads.upload(&[1, 2, 3], [1, 1]).is_none());
-    assert_eq!(uploads.capacity(), SLOTS * SLOT_BYTES as usize);
     uploads.finish();
     state
       .device

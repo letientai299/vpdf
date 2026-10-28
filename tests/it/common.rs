@@ -12,13 +12,6 @@ use vpdf_terminal::decode::Parser;
 use vpdf_ui::layout::Screen;
 use vpdf_ui::prompt::History;
 
-/// The focused pane of `session` drawn alone.
-pub fn focused_frame(session: &mut vpdf::session::Session) -> Result<String> {
-  let mut out = Vec::new();
-  session.draw_focused(&mut out)?;
-  Ok(String::from_utf8_lossy(&out).into_owned())
-}
-
 pub fn preview_frame(app: &mut Solo) -> Result<String> {
   let mut out = Vec::new();
   app.graphics.begin(&mut out)?;
@@ -97,7 +90,7 @@ pub fn outline_loaded(app: &mut App) -> Result<()> {
 pub fn annotations_loaded(app: &mut App) -> Result<()> {
   wait_until(10, "Annotations", || {
     app.sidebar_updates()?;
-    Ok(!app.annotations_pending())
+    Ok(app.panel.as_ref().unwrap().view.note() != "loading")
   })
 }
 

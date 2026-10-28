@@ -70,14 +70,6 @@ impl Pane {
     self.tracking.target
   }
 
-  pub fn point_to(&mut self, position: Position) {
-    self.tracking.target = Some(position);
-  }
-
-  pub fn clear_target(&mut self) {
-    self.tracking.target = None;
-  }
-
   pub fn animation(&self) -> &Scroll {
     &self.tracking.animation
   }
@@ -94,10 +86,6 @@ impl Pane {
     let Some(target) = self.finish_scroll() else { return false };
     self.reader.scroll = target;
     true
-  }
-
-  pub fn animate_to(&mut self, target: f32, now: std::time::Instant) {
-    self.tracking.animation.start(target, now);
   }
 
   pub fn landing(&self) -> &crate::page::landing::Landing {
