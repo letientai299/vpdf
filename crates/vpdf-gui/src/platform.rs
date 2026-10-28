@@ -20,6 +20,7 @@ impl Native {
     cc: &eframe::CreationContext<'_>,
     documents: &fmv_macos_events::Inbox,
     sender: Sender,
+    scale: crate::scale::Scale,
   ) -> Option<Self> {
     let snapshot = Rc::new(RefCell::new(Arc::new(Snapshot::default())));
     let inputs = Rc::new(RefCell::new(Vec::new()));
@@ -47,10 +48,17 @@ impl Native {
       &tools(),
       move |request| {
         let input = match request {
-          vpdf_macos::Request::Menu(index) => MENUS
-            .get(index)
-            .and_then(|entry| current.borrow().command(entry.action))
-            .map(Input::Action),
+          vpdf_macos::Request::Menu(index) => {
+            MENUS.get(index).and_then(|entry| match entry.action {
+              MenuAction::Reader(action) => {
+                current.borrow().command(action).map(Input::Action)
+              }
+              MenuAction::Scale(direction) => {
+                scale.step(direction);
+                None
+              }
+            })
+          }
           vpdf_macos::Request::Page(page) => current
             .borrow()
             .command(Action::GoToPage)
@@ -85,7 +93,10 @@ impl Native {
       *self.snapshot.borrow_mut() = Arc::clone(snapshot);
       let states: Vec<_> = MENUS
         .iter()
-        .map(|entry| snapshot.command(entry.action).is_some())
+        .map(|entry| match entry.action {
+          MenuAction::Reader(action) => snapshot.command(action).is_some(),
+          MenuAction::Scale(_) => true,
+        })
         .collect();
       self.integration.enable(&states);
       self.integration.enable_recent(snapshot.command(Action::Open).is_some());
@@ -215,9 +226,15 @@ pub fn route(
 }
 
 // Menu order also identifies callback commands.
+#[derive(Clone, Copy, PartialEq)]
+enum MenuAction {
+  Reader(Action),
+  Scale(f32),
+}
+
 pub struct Entry {
   pub item: vpdf_macos::Item,
-  pub action: Action,
+  action: MenuAction,
 }
 
 const fn entry(
@@ -235,7 +252,21 @@ const fn entry(
       control: false,
       responder: None,
     },
-    action,
+    action: MenuAction::Reader(action),
+  }
+}
+
+const fn scale_entry(title: &'static str, direction: f32) -> Entry {
+  Entry {
+    item: vpdf_macos::Item {
+      menu: "View",
+      title,
+      key: "",
+      shift: false,
+      control: false,
+      responder: None,
+    },
+    action: MenuAction::Scale(direction),
   }
 }
 
@@ -254,7 +285,7 @@ const fn edit(
 fn index(action: Action) -> usize {
   MENUS
     .iter()
-    .position(|entry| entry.action == action)
+    .position(|entry| entry.action == MenuAction::Reader(action))
     .expect("Menu entry for action")
 }
 
@@ -308,12 +339,14 @@ pub const MENUS: &[Entry] = &[
       control: false,
       responder: None,
     },
-    action: Action::PreviousResult,
+    action: MenuAction::Reader(Action::PreviousResult),
   },
   entry("View", "Show Sidebar", "", Action::Sidebar),
   entry("View", "Fit Width", "", Action::FitWidth),
   entry("View", "Fit Page", "", Action::FitPage),
-  entry("View", "Zoom In", "+", Action::ZoomIn),
+  scale_entry("Increase UI Scale", 1.0),
+  scale_entry("Decrease UI Scale", -1.0),
+  entry("View", "Zoom In", "=", Action::ZoomIn),
   entry("View", "Zoom Out", "-", Action::ZoomOut),
   entry("View", "Rotate Clockwise", "", Action::Rotate),
   entry("View", "Back", "[", Action::Back),
@@ -329,7 +362,7 @@ pub const MENUS: &[Entry] = &[
       control: true,
       responder: None,
     },
-    action: Action::NextTab,
+    action: MenuAction::Reader(Action::NextTab),
   },
   Entry {
     item: vpdf_macos::Item {
@@ -340,7 +373,7 @@ pub const MENUS: &[Entry] = &[
       control: true,
       responder: None,
     },
-    action: Action::PreviousTab,
+    action: MenuAction::Reader(Action::PreviousTab),
   },
   entry("Window", "Close Pane", "", Action::ClosePane),
   entry("Help", "Vpdf Help", "", Action::Help),

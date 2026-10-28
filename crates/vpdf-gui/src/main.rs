@@ -46,9 +46,35 @@ fn set_theme(ctx: &egui::Context, palette: vpdf_model::theme::Palette) {
   });
 }
 
+#[cfg(target_os = "macos")]
+fn setup_scale(
+  cc: &eframe::CreationContext<'_>,
+) -> (vpdf_gui::scale::Scale, Option<vpdf_macos::ScaleMonitor>) {
+  let scale = vpdf_gui::scale::Scale::new(&cc.egui_ctx);
+  let current = scale.clone();
+  let monitor =
+    vpdf_macos::ScaleMonitor::new(cc, move |direction| current.step(direction));
+  (scale, monitor)
+}
+
+#[cfg(target_os = "macos")]
+fn native_input(native: Option<&vpdf_gui::platform::Native>) -> input::Adapter {
+  let mut input = input::Adapter::default();
+  if native.is_some() {
+    for shortcut in vpdf_gui::platform::shortcuts() {
+      input.reserve(shortcut);
+    }
+  }
+  input
+}
+
 struct Window {
   #[cfg(target_os = "macos")]
   native: Option<vpdf_gui::platform::Native>,
+  #[cfg(target_os = "macos")]
+  _scale_monitor: Option<vpdf_macos::ScaleMonitor>,
+  #[cfg(target_os = "macos")]
+  scale: vpdf_gui::scale::Scale,
   #[cfg(target_os = "macos")]
   documents: fmv_macos_events::Inbox,
   #[cfg(target_os = "macos")]
@@ -74,6 +100,8 @@ struct Window {
 
 impl Window {
   fn refresh_system(&mut self, ctx: &egui::Context) {
+    #[cfg(target_os = "macos")]
+    self.scale.apply();
     let system_palette = system_palette(ctx);
     if system_palette != self.system_palette {
       self.system_palette = system_palette;
@@ -95,6 +123,8 @@ impl Window {
     #[cfg(target_os = "macos")] documents: fmv_macos_events::Inbox,
   ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
     vpdf_gui::fonts::install(&cc.egui_ctx);
+    #[cfg(target_os = "macos")]
+    let (scale, scale_monitor) = setup_scale(cc);
     #[cfg(feature = "bench-events")]
     let events = args
       .events
@@ -140,27 +170,28 @@ impl Window {
       bridge.send(Input::Observe(true));
     }
     #[cfg(target_os = "macos")]
-    let native =
-      vpdf_gui::platform::Native::new(cc, &documents, bridge.sender());
+    let native = vpdf_gui::platform::Native::new(
+      cc,
+      &documents,
+      bridge.sender(),
+      scale.clone(),
+    );
     #[cfg(target_os = "macos")]
     if native.is_none() {
       let ctx = cc.egui_ctx.clone();
       documents.set_wake(move || ctx.request_repaint());
     }
-    let input = input::Adapter::default();
     #[cfg(target_os = "macos")]
-    let input = {
-      let mut input = input;
-      if native.is_some() {
-        for shortcut in vpdf_gui::platform::shortcuts() {
-          input.reserve(shortcut);
-        }
-      }
-      input
-    };
+    let input = native_input(native.as_ref());
+    #[cfg(not(target_os = "macos"))]
+    let input = input::Adapter::default();
     Ok(Self {
       #[cfg(target_os = "macos")]
       native,
+      #[cfg(target_os = "macos")]
+      _scale_monitor: scale_monitor,
+      #[cfg(target_os = "macos")]
+      scale,
       #[cfg(target_os = "macos")]
       documents,
       #[cfg(target_os = "macos")]
@@ -248,7 +279,7 @@ impl eframe::App for Window {
   #[cfg(any(target_os = "macos", feature = "bench-events"))]
   fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
     #[cfg(not(feature = "bench-events"))]
-    let _ = (ctx, raw);
+    let _ = ctx;
     #[cfg(target_os = "macos")]
     if let Some(presentation) = &self.presentation {
       presentation.prepare_frame();
@@ -262,6 +293,10 @@ impl eframe::App for Window {
       {
         native.probe(&command);
       }
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(scale) = input::ui_scale(&mut raw.events, self.scale.value()) {
+      self.scale.set(scale);
     }
   }
 

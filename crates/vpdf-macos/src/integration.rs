@@ -9,10 +9,11 @@ use objc2::{
 };
 use objc2_app_kit::{
   NSApplication, NSControl, NSControlTextEditingDelegate, NSDocumentController,
-  NSEventModifierFlags, NSMenu, NSMenuDelegate, NSMenuItem, NSModalResponseOK,
-  NSOpenPanel, NSPanel, NSPasteboard, NSPasteboardTypeString, NSScreen,
-  NSTextFieldDelegate, NSTextView, NSToolbar, NSToolbarDelegate, NSToolbarItem,
-  NSWindow, NSWorkspace, NSWorkspaceOpenConfiguration,
+  NSEvent, NSEventMask, NSEventModifierFlags, NSMenu, NSMenuDelegate,
+  NSMenuItem, NSModalResponseOK, NSOpenPanel, NSPanel, NSPasteboard,
+  NSPasteboardTypeString, NSScreen, NSTextFieldDelegate, NSTextView, NSToolbar,
+  NSToolbarDelegate, NSToolbarItem, NSWindow, NSWorkspace,
+  NSWorkspaceOpenConfiguration,
 };
 use objc2_foundation::{
   MainThreadMarker, NSArray, NSNotification, NSObject, NSObjectProtocol,
@@ -702,6 +703,108 @@ pub fn terminate() {
   if let Some(mtm) = MainThreadMarker::new() {
     NSApplication::sharedApplication(mtm).terminate(None);
   }
+}
+
+fn scale_key(
+  window: isize,
+  target: isize,
+  code: u16,
+  flags: NSEventModifierFlags,
+) -> Option<f32> {
+  if window != target {
+    return None;
+  }
+  let modifiers = NSEventModifierFlags::Command
+    | NSEventModifierFlags::Shift
+    | NSEventModifierFlags::Control
+    | NSEventModifierFlags::Option;
+  if flags & modifiers
+    != NSEventModifierFlags::Command | NSEventModifierFlags::Shift
+  {
+    return None;
+  }
+  match code {
+    24 => Some(1.0),
+    27 => Some(-1.0),
+    _ => None,
+  }
+}
+
+#[cfg(test)]
+mod scale_tests {
+  use super::*;
+
+  #[test]
+  fn shifted_command_keys_are_distinct() {
+    let shift_command =
+      NSEventModifierFlags::Command | NSEventModifierFlags::Shift;
+    assert_eq!(scale_key(1, 1, 24, shift_command), Some(1.0));
+    assert_eq!(scale_key(1, 1, 27, shift_command), Some(-1.0));
+    assert_eq!(
+      scale_key(1, 1, 27, shift_command | NSEventModifierFlags::CapsLock),
+      Some(-1.0)
+    );
+    assert_eq!(scale_key(1, 1, 27, NSEventModifierFlags::Command), None);
+    assert_eq!(
+      scale_key(1, 1, 27, shift_command | NSEventModifierFlags::Option),
+      None
+    );
+    assert_eq!(scale_key(1, 1, 0, shift_command), None);
+    assert_eq!(scale_key(2, 1, 27, shift_command), None);
+  }
+}
+
+pub struct ScaleMonitor(Retained<AnyObject>);
+
+impl ScaleMonitor {
+  pub fn new(
+    parent: &impl HasWindowHandle,
+    action: impl Fn(f32) + 'static,
+  ) -> Option<Self> {
+    let window = presentation::view(parent)?.window()?.windowNumber();
+    let block = RcBlock::new(move |event: std::ptr::NonNull<NSEvent>| {
+      // SAFETY: AppKit supplies a live event during the callback.
+      let key = unsafe { event.as_ref() };
+      let direction = scale_key(
+        key.windowNumber(),
+        window,
+        key.keyCode(),
+        key.modifierFlags(),
+      );
+      if let Some(direction) = direction {
+        action(direction);
+        std::ptr::null_mut()
+      } else {
+        event.as_ptr()
+      }
+    });
+    // SAFETY: The callback returns the event or null.
+    unsafe {
+      NSEvent::addLocalMonitorForEventsMatchingMask_handler(
+        NSEventMask::KeyDown,
+        &block,
+      )
+    }
+    .map(Self)
+  }
+}
+
+impl Drop for ScaleMonitor {
+  fn drop(&mut self) {
+    // SAFETY: The token comes from AppKit's monitor registration.
+    unsafe { NSEvent::removeMonitor(&self.0) };
+  }
+}
+
+pub fn ui_scale() -> Option<f32> {
+  let value = NSUserDefaults::standardUserDefaults()
+    .doubleForKey(ns_string!("VpdfUIScale")) as f32;
+  (value.is_finite() && (0.2..=5.0).contains(&value)).then_some(value)
+}
+
+pub fn set_ui_scale(value: f32) {
+  NSUserDefaults::standardUserDefaults()
+    .setDouble_forKey(f64::from(value), ns_string!("VpdfUIScale"));
 }
 
 /// Whether the system reopens windows on relaunch; unset means yes.

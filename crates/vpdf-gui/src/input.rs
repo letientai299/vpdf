@@ -476,6 +476,35 @@ fn key_code(key: Key, modifiers: Modifiers) -> Option<KeyCode> {
   })
 }
 
+pub fn scale_step(scale: f32, direction: f32) -> f32 {
+  ((scale + direction * 0.1).clamp(0.2, 5.0) * 10.0).round() / 10.0
+}
+
+pub fn ui_scale(events: &mut Vec<Event>, scale: f32) -> Option<f32> {
+  let mut value = scale;
+  let mut changed = false;
+  events.retain(|event| {
+    let Event::Key { key, physical_key, pressed, modifiers, .. } = event else {
+      return true;
+    };
+    if !modifiers.mac_cmd || !modifiers.shift || modifiers.ctrl || modifiers.alt
+    {
+      return true;
+    }
+    let direction = match (key, physical_key) {
+      (Key::Plus | Key::Equals, _) | (_, Some(Key::Equals)) => 1.0,
+      (Key::Minus, _) | (_, Some(Key::Minus)) => -1.0,
+      _ => return true,
+    };
+    if *pressed {
+      value = scale_step(value, direction);
+      changed = true;
+    }
+    false
+  });
+  changed.then_some(value)
+}
+
 fn key_modifiers(modifiers: Modifiers) -> KeyModifiers {
   let mut keys = KeyModifiers::NONE;
   if modifiers.ctrl {
@@ -541,6 +570,22 @@ mod tests {
       repeat: false,
       modifiers,
     }
+  }
+
+  #[test]
+  fn ui_scale_consumes_only_shift_command_zoom() {
+    let modifiers = Modifiers { shift: true, ..Modifiers::MAC_CMD };
+    let mut input = vec![
+      key(Key::Plus, modifiers),
+      key(Key::Minus, modifiers),
+      key(Key::Equals, Modifiers::MAC_CMD),
+      key(Key::Minus, Modifiers::MAC_CMD),
+    ];
+    assert_eq!(ui_scale(&mut input, 1.0), Some(1.0));
+    assert_eq!(input.len(), 2);
+    assert_eq!(ui_scale(&mut input, 1.0), None);
+    let mut input = vec![key(Key::Minus, modifiers)];
+    assert_eq!(ui_scale(&mut input, 0.2), Some(0.2));
   }
 
   #[test]

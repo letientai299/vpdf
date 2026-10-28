@@ -33,25 +33,26 @@ In the macOS app, menu shortcuts take precedence over custom bindings.
 Vim keys and terminal bindings keep their configured behavior. Menus disable
 commands that the focused view cannot perform.
 
-| Shortcut                        | Action                                        |
-| ------------------------------- | --------------------------------------------- |
-| Command-O                       | Open PDFs in a window sheet                   |
-| Command-Comma                   | Open the config file in the plain-text editor |
-| Command-T                       | Open the Recent view in a new tab             |
-| Control-Tab / Control-Shift-Tab | Next / previous tab                           |
-| Command-W                       | Close the tab and its splits; last tab quits  |
-| Command-F                       | Find in the active PDF                        |
-| Command-G / Shift-Command-G     | Next / previous document result               |
-| Command-C                       | Copy the focused selection                    |
-| Command-A                       | Select all document text or prompt text       |
-| Command-X / V / Z               | Cut / paste / undo in a prompt                |
-| Command-P                       | Print through the existing print dialog       |
-| Option-Command-T                | Hide or show the toolbar                      |
-| Command-Q                       | Quit                                          |
+| Shortcut                          | Action                                        |
+| --------------------------------- | --------------------------------------------- |
+| Command-O                         | Open PDFs in a window sheet                   |
+| Command-Comma                     | Open the config file in the plain-text editor |
+| Command-T                         | Open the Recent view in a new tab             |
+| Control-Tab / Control-Shift-Tab   | Next / previous tab                           |
+| Command-W                         | Close the tab and its splits; last tab quits  |
+| Command-F                         | Find in the active PDF                        |
+| Command-G / Shift-Command-G       | Next / previous document result               |
+| Command-C                         | Copy the focused selection                    |
+| Command-A                         | Select all document text or prompt text       |
+| Command-X / V / Z                 | Cut / paste / undo in a prompt                |
+| Command-P                         | Print through the existing print dialog       |
+| Command-Shift-= / Command-Shift-- | Increase / decrease UI scale                  |
+| Option-Command-T                  | Hide or show the toolbar                      |
+| Command-Q                         | Quit                                          |
 
 On the last Recent tab, Command-W closes the window. Close Pane remains a
 separate Window menu action. Zoom Window resizes the window; View zoom magnifies
-the PDF. Help opens the embedded manual.
+the PDF. UI scale persists across launches. Help opens the embedded manual.
 
 The toolbar toggles the sidebar, shows the page, zooms, fits the page or its
 width, and starts Find. Type a page number and press Return to go there; Escape
