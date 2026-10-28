@@ -9,10 +9,9 @@ their owning source files.
 The [embedded help build][help-build] prepares the manual before compilation.
 
 Install [mise][mise] and the native build dependencies: a C/C++ compiler, Make,
-and libclang. Development tasks also use [Git][git], `curl` for corpus
-downloads, and [Python 3][python] for script tests, benchmarks, and demo
-capture. Mise installs the Rust toolchain and the tools pinned in the
-[task configuration][tasks].
+and libclang. Build tasks also need [Git][git]. Corpus downloads use `curl`.
+Mise installs [Python][python] for builds and development scripts, the Rust
+toolchain, and the tools pinned in the [task configuration][tasks].
 
 On macOS, install the [Xcode command line tools][xcode] with
 `xcode-select --install` and [pkgconf][pkgconf] with `brew install pkgconf`.
@@ -20,7 +19,7 @@ If bindgen cannot find libclang, install [Homebrew LLVM][llvm] and set
 `LIBCLANG_PATH` to its `lib` directory. On x86-64 Ubuntu:
 
 ```sh
-sudo apt-get install build-essential libclang-dev musl-tools git curl python3
+sudo apt-get install build-essential libclang-dev musl-tools git curl
 ```
 
 From a checkout:
@@ -618,8 +617,8 @@ The [capture script][demo-script] drives the real reader inside an isolated
 [Kitty][kitty-capture] instance. It captures the terminal's rendered graphics,
 including PDF images, through Kitty's screenshot API. Install Kitty using its
 [upstream instructions][kitty-install]; both `kitty` and `kitten` must be on
-`PATH`, and `kitten @ screenshot --help` must succeed. Also install Python 3
-and [ImageMagick][imagemagick] with JPEG support and the `magick` command.
+`PATH`, and `kitten @ screenshot --help` must succeed. Also install
+[ImageMagick][imagemagick] with JPEG support and the `magick` command.
 The background window runner currently requires a macOS desktop session. Kitty's
 screenshot API does not require screen-recording permission; interaction video
 capture does. See [Demo media publication][demo-media] for video setup.
@@ -627,8 +626,8 @@ capture does. See [Demo media publication][demo-media] for video setup.
 OCR scenes also need [Tesseract and English language data][ocr-setup] and
 [Poppler][poppler]'s `pdftotext` to verify that the scanned input has no
 embedded text. On macOS, install the capture helpers with
-`brew install python imagemagick poppler tesseract`. For Linux corpus and OCR
-checks, install `python3 poppler-utils tesseract-ocr tesseract-ocr-eng` with
+`brew install imagemagick poppler tesseract`. For Linux corpus and OCR
+checks, install `poppler-utils tesseract-ocr tesseract-ocr-eng` with
 `apt-get`; obtain ImageMagick from its installation guide. These capture helpers
 need separate setup from `mise install`.
 

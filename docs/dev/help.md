@@ -7,13 +7,12 @@ frontends route help through the shared session.
 
 ## Build and check
 
-Run `mise install` for the pinned [Pandoc parser][pandoc] and
-[Typst compiler][typst]. Install [QPDF][qpdf] for lossless PDF compression;
-on macOS, use `brew install qpdf`. Builds use vendored fonts, disable system
-fonts, clear Typst environment overrides, and need no font downloads. The
-[renderer pin][renderer] records tool identities and font hashes.
-Short legal notices appear in the PDF. Full [font notices][notices] accompany
-the binary and app resources.
+Run `mise install` for the pinned [Pandoc parser][pandoc], [Typst
+compiler][typst], and [QPDF][qpdf] for lossless PDF compression. Builds use
+vendored fonts, disable system fonts, clear Typst environment overrides, and
+need no font downloads. The [renderer pin][renderer] records tool identities and
+font hashes. Short legal notices appear in the PDF. Full [font notices][notices]
+accompany the binary and app resources.
 
 ```sh
 mise run help:build

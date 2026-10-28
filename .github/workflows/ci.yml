@@ -24,10 +24,10 @@ jobs:
         include:
           - os: ubuntu-24.04
             platform: linux-x86_64
-            tools: rust aqua:nextest-rs/nextest/cargo-nextest ruff rumdl taplo upx typst aqua:jgm/pandoc
+            tools: python rust aqua:nextest-rs/nextest/cargo-nextest ruff rumdl taplo upx typst aqua:jgm/pandoc github:qpdf/qpdf
           - os: macos-14
             platform: macos-aarch64
-            tools: rust aqua:nextest-rs/nextest/cargo-nextest ruff rumdl taplo typst aqua:jgm/pandoc
+            tools: python rust aqua:nextest-rs/nextest/cargo-nextest ruff rumdl taplo typst aqua:jgm/pandoc github:qpdf/qpdf
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -38,10 +38,10 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y musl-tools libclang-dev qpdf poppler-utils
+          sudo apt-get install --no-install-recommends -y musl-tools libclang-dev poppler-utils
       - name: Install macOS PDF tools
         if: runner.os == 'macOS'
-        run: brew install qpdf poppler
+        run: brew install poppler
       - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
         with:
           install_args: ${{ matrix.tools }}

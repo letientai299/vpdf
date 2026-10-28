@@ -1,4 +1,5 @@
 [tools]
+python = "3.15.2"
 rust = { version = "nightly-2026-10-20", components = "clippy,rustfmt,rust-analyzer,rust-src" }
 "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.148"
 prek = "0.5.6"
@@ -7,6 +8,7 @@ rumdl = "0.3.0"
 taplo = "0.10.0"
 typst = "0.15.1"
 "aqua:jgm/pandoc" = "3.13"
+"github:qpdf/qpdf" = { version = "12.4.2", matching = "-bin-" }
 upx = { version = "5.2.1", os = ["linux"] }
 
 [vars]
