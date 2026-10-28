@@ -3,13 +3,62 @@ import io
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from tools.build import cache as build_cache
 from tools.check import hooks
+
+
+class MergeTests(unittest.TestCase):
+    def test_merges_serialize(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "log"
+            wt = root / "bin/wt"
+            wt.parent.mkdir()
+            wt.write_text(
+                f"#!/bin/sh\necho start >> '{log}'\nsleep 0.3\n"
+                f"echo \"end $*\" >> '{log}'\n"
+            )
+            wt.chmod(0o755)
+            env = os.environ | {
+                "PATH": str(wt.parent) + os.pathsep + os.environ["PATH"],
+                "XDG_CACHE_HOME": str(root / "cache"),
+                "VPDF_BUILD_CACHE_ID": "0123456789abcdef",
+            }
+            command = [sys.executable, "-B", "-m", "tools.check.merge", "-y"]
+            project = Path(hooks.__file__).resolve().parents[2]
+            first = subprocess.Popen(command, cwd=project, env=env)
+            try:
+                deadline = time.monotonic() + 10
+                while not log.exists():
+                    self.assertLess(time.monotonic(), deadline)
+                    time.sleep(0.01)
+                second = subprocess.run(
+                    command,
+                    cwd=project,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                self.assertEqual(first.wait(timeout=10), 0)
+            finally:
+                if first.poll() is None:
+                    first.kill()
+                    first.wait()
+            self.assertEqual(second.returncode, 0)
+            self.assertIn("Waiting for another merge", second.stdout)
+            self.assertEqual(
+                log.read_text().splitlines(),
+                ["start", "end merge -y", "start", "end merge -y"],
+            )
 
 
 class WidthTests(unittest.TestCase):
@@ -380,11 +429,19 @@ class SnapshotTests(unittest.TestCase):
         index = self.root / "custom-index"
         shutil.copyfile(self.root / ".git/index", index)
         original = index.read_bytes()
+        helpers = str(self.root / "git-core")
         with (
-            patch.dict(os.environ, GIT_INDEX_FILE=str(index)),
+            patch.dict(
+                os.environ,
+                GIT_INDEX_FILE=str(index),
+                GIT_EXEC_PATH=helpers,
+                PATH=helpers + os.pathsep + os.environ["PATH"],
+            ),
             self.snapshot() as (_, env),
         ):
             self.assertNotIn("GIT_INDEX_FILE", env)
+            self.assertNotIn("GIT_EXEC_PATH", env)
+            self.assertNotIn(helpers, env["PATH"].split(os.pathsep))
         self.assertEqual(index.read_bytes(), original)
 
     def test_external_symlink_rejected(self):
@@ -549,6 +606,24 @@ class SnapshotTests(unittest.TestCase):
         with patch.object(hooks, "execute") as checks:
             hooks.pre_push(self.root, io.StringIO(refs))
         self.assertEqual(checks.call_count, 1)
+
+    def test_verify_waits_for_running_check(self):
+        commit = self.git("rev-parse", "HEAD").decode().strip()
+        started = []
+        lock = hooks.check_path(self.root, commit, "lock")
+        with patch.object(
+            hooks, "execute", side_effect=lambda *_: started.append(1)
+        ):
+            with hooks.locked(lock):
+                waiter = threading.Thread(
+                    target=hooks.verify, args=(self.root, commit)
+                )
+                waiter.start()
+                waiter.join(0.5)
+                self.assertTrue(waiter.is_alive())
+                self.assertEqual(started, [])
+            waiter.join(10)
+        self.assertEqual(started, [1])
 
     def test_push_deletion_skips(self):
         null = "0" * 40

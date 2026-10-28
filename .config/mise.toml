@@ -10,6 +10,7 @@ typst = "0.15.1"
 "aqua:jgm/pandoc" = "3.13"
 "github:qpdf/qpdf" = { version = "12.4.2", matching = "-bin-" }
 upx = { version = "5.2.1", os = ["linux"] }
+"aqua:max-sixty/worktrunk" = "0.80.0"
 
 [vars]
 ocr_tests = "test(real_ocr_and_cancel) | test(real_ocr_cache_policy)"
@@ -28,7 +29,6 @@ run = "python3 -B -m tools.build.worker validate"
 
 [tasks."ci:check"]
 description = "Run current-platform CI checks and verify release archives"
-env.CARGO_PROFILE_DEV_OPT_LEVEL = "1"
 env.CARGO_INCREMENTAL = "0"
 env.VPDF_BENCH_EVENTS = "0"
 env.VPDF_CACHE = "off"
@@ -276,6 +276,14 @@ env.VPDF_CACHE = "off"
 description = "Format staged files and test affected code"
 run = "python3 -B -m tools.check.hooks pre-commit"
 
+[tasks.merge]
+description = "Merge this worktree into main, one merge at a time"
+run = "python3 -B -m tools.check.merge"
+
+[tasks."hook:verify"]
+description = "Run CI checks on commits; default HEAD"
+run = "python3 -B -m tools.check.hooks verify"
+
 [tasks."hook:check"]
 hide = true
 description = "Run full read-only validation"
@@ -313,6 +321,10 @@ run = """
 sh tools/build/build.sh
 if [ "$(uname -s)" = Darwin ]; then sh tools/package/app.sh; fi
 """
+
+[tasks."cache:prune"]
+description = "Prune build caches; pass removed worktree paths"
+run = "python3 -B -m tools.build.cleanup"
 
 [tasks.corpus]
 description = "Fetch and verify the public test PDFs into tmp/corpus"

@@ -14,13 +14,16 @@ import uuid
 from pathlib import Path
 
 from tools.build.cache import (
-    DEFAULT_GIB,
+    WORKER_JOBS,
     WORKER_PROTOCOL,
     cache_key,
+    cache_limit,
     cache_root,
     cargo_env,
     invoke,
     locked,
+    mark_origin,
+    pool_size,
     prune,
 )
 
@@ -167,14 +170,18 @@ def snapshot_git(root, source, revision, descriptor):
     sync_files(metadata / "refs/tags", tags)
 
 
+def worker_slot(name):
+    return 0 if name == "worker" else int(name.removeprefix("worker-")) - 1
+
+
 @contextlib.contextmanager
 def worker_lease(cache, root, count):
     leases = cache / "leases"
     affinity = (
         cache / "affinity" / hashlib.sha256(os.fsencode(root)).hexdigest()
     )
-    names = ["worker", "worker-2"][:count]
-    if count == 2 and affinity.exists():
+    names = ["worker", *(f"worker-{index}" for index in range(2, count + 1))]
+    if count > 1 and affinity.exists():
         preferred = affinity.read_text()
         if preferred in names:
             names.remove(preferred)
@@ -182,10 +189,10 @@ def worker_lease(cache, root, count):
     while True:
         for name in names:
             with contextlib.ExitStack() as stack:
-                mode = fcntl.LOCK_EX | (fcntl.LOCK_NB if count == 2 else 0)
+                mode = fcntl.LOCK_EX | (fcntl.LOCK_NB if count > 1 else 0)
                 try:
                     gate = None
-                    if count == 2:
+                    if count > 1:
                         gate = stack.enter_context(
                             locked(
                                 leases / "worker", fcntl.LOCK_SH | fcntl.LOCK_NB
@@ -196,11 +203,8 @@ def worker_lease(cache, root, count):
                         if name == "worker" and gate
                         else stack.enter_context(locked(leases / name, mode))
                     )
-                    slots = (
-                        range(2)
-                        if count == 1
-                        else [0 if name == "worker" else 1]
-                    )
+                    # Older pool launchers know only two slots.
+                    slots = range(2) if count == 1 else [worker_slot(name)]
                     resources = [
                         (
                             slot,
@@ -227,31 +231,32 @@ def worker_snapshot(root, files, env=None, revision=None, scope="snapshot"):
     env["VPDF_BUILD_CACHE_ID"] = cache_key(root)
     cache = cache_root(env, root)
     build = cache / "build"
-    count = int(env.get("VPDF_BUILD_WORKERS", "1"))
-    if count not in {1, 2}:
-        raise ValueError("Worker count must be one or two")
-    if count == 2:
-        for name in ["CARGO_BUILD_JOBS", "NEXTEST_TEST_THREADS"]:
-            total = int(env.get(name, "4"))
-            if not 2 <= total <= 4:
-                raise ValueError("Pool budget must be between two and four")
-            env[name] = str(total // count)
-    limit = float(env.get("VPDF_BUILD_CACHE_GIB", DEFAULT_GIB)) * 1024**3
-    if not 0 < limit < float("inf"):
-        raise ValueError("Build cache budget must be positive")
+    count = pool_size(env)
+    limit = cache_limit(env)
     leases = cache / "leases"
     leases.mkdir(mode=0o700, parents=True, exist_ok=True)
+    mark_origin(cache, root)
     request = uuid.uuid4().hex[:12]
     print(f"Worker request: {request} scope={scope}", flush=True)
     capture = time.monotonic()
     captured = files()
     cache_script = captured.get("tools/build/cache.py")
-    if count == 2 and cache_script is not None:
-        marker = f"WORKER_PROTOCOL = {WORKER_PROTOCOL}".encode()
-        if marker not in cache_script[1].splitlines():
-            raise ValueError(
-                "Pool snapshot requires updated validation scripts"
-            )
+    if count > 1 and cache_script is not None:
+        lines = cache_script[1].splitlines()
+        # Older snapshot children keep only the slots they know.
+        supported = next(
+            (
+                limit
+                for protocol, limit in [(WORKER_PROTOCOL, count), (2, 2)]
+                if f"WORKER_PROTOCOL = {protocol}".encode() in lines
+            ),
+            1,
+        )
+        if supported < count:
+            print(f"Worker pool: older snapshot uses {supported}", flush=True)
+            count = supported
+    for name in ["CARGO_BUILD_JOBS", "NEXTEST_TEST_THREADS"]:
+        env.setdefault(name, str(WORKER_JOBS))
     if revision is None:
         head = subprocess.run(
             ["git", "rev-parse", "--verify", "HEAD"],
@@ -300,8 +305,6 @@ def worker_snapshot(root, files, env=None, revision=None, scope="snapshot"):
             )
             if env.get("VPDF_CORPUS") == str(root / "tmp/corpus"):
                 env["VPDF_CORPUS"] = str(source / "tmp/corpus")
-            env.setdefault("CARGO_BUILD_JOBS", "4")
-            env.setdefault("NEXTEST_TEST_THREADS", "4")
             # Reuse corpus inputs without copying PDFs.
             (root / "tmp").mkdir(exist_ok=True)
             (source / "tmp").symlink_to(root / "tmp", target_is_directory=True)
@@ -324,6 +327,16 @@ def copy_binary(source, destination):
     replace_file(
         destination, source.read_bytes(), source.stat().st_mode & 0o777
     )
+
+
+def link_binary(source, destination):
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}")
+    os.link(source, temporary)
+    try:
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def copy_outputs(task, root, target, env):
@@ -355,7 +368,7 @@ def copy_outputs(task, root, target, env):
         binary = Path(triple or "") / "debug" / name
         copy_binary(target / binary, output / binary)
         if triple:
-            copy_binary(target / binary, output / "debug" / name)
+            link_binary(output / binary, output / "debug" / name)
     elif task == "build:app" or (
         task == "build:install" and (target / "dist/Vpdf.app").exists()
     ):
@@ -501,7 +514,7 @@ def native_make(args):
     make = shutil.which("make", path=env["PATH"])
     if not make:
         raise RuntimeError("Make executable missing")
-    value = env.get("CARGO_BUILD_JOBS", "4")
+    value = env.get("CARGO_BUILD_JOBS", str(WORKER_JOBS))
     jobs = (os.cpu_count() or 1) if value == "default" else int(value)
     if jobs < 0:
         jobs = max(1, (os.cpu_count() or 1) + jobs)

@@ -13,30 +13,62 @@ from pathlib import Path
 from tools.build.cache import cache_root
 from tools.build.worker import replace_file, working_files
 
-# Execution metadata does not affect checked inputs.
+# Only these variables can change checked results.
+INPUT_PREFIXES = (
+    "AR",
+    "BINDGEN_",
+    "CARGO",
+    "CC",
+    "CFLAGS",
+    "CPPFLAGS",
+    "CXX",
+    "LDFLAGS",
+    "LIBCLANG",
+    "MACOSX_",
+    "NEXTEST_",
+    "PKG_CONFIG",
+    "PYTHON",
+    "RUST",
+    "TESSDATA",
+    "VPDF_",
+)
+INPUTS = {
+    "DEVELOPER_DIR",
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "LC_COLLATE",
+    "LC_CTYPE",
+    "LC_MESSAGES",
+    "LC_NUMERIC",
+    "LC_TIME",
+    "PATH",
+    "SDKROOT",
+    "TMPDIR",
+    "TZ",
+    "XDG_CACHE_HOME",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_STATE_HOME",
+}
+# Terminal detection reads only whether these exist.
+PRESENCE = {"SSH_CONNECTION", "SSH_TTY", "STY", "TMUX", "TMUX_PANE"}
+# Execution metadata among those inputs.
 TRANSIENT = {
-    "PWD",
-    "OLDPWD",
-    "SHLVL",
-    "_",
-    "GIT_PREFIX",
-    "CODEX_TOOL_CALL_ID",
-    "MISE_TASK_NAME",
-    "MISE_TASK_DIR",
-    "MISE_TASK_FILE",
-    "MISE_TASK_OUTPUT",
-    "MISE_TASK_COLOR",
-    "MISE_TASK_TIMINGS",
-    "MISE_TASK_PGID_MANAGED",
-    "MISE_ORIGINAL_CWD",
-    "MISE_PROJECT_ROOT",
-    "MISE_CONFIG_ROOT",
-    "MISE_TRUSTED_CONFIG_PATHS",
     "VPDF_BUILD_WORKER_FD",
     "VPDF_BUILD_RESOURCE_FDS",
     "VPDF_BUILD_REQUEST_ID",
     "VPDF_BUILD_ORIGIN",
     "VPDF_VALIDATE_FORCE",
+    "VPDF_BUILD_WORKERS",
+    "CARGO_BUILD_JOBS",
+    "NEXTEST_TEST_THREADS",
+}
+# Explicit defaults match unset values.
+DEFAULTS = {
+    "CARGO_INCREMENTAL": "0",
+    "NEXTEST_RETRIES": "0",
+    "VPDF_BENCH_EVENTS": "0",
 }
 TOOLS = (
     "rustc",
@@ -144,9 +176,14 @@ def fingerprint(root, env, details=None, *, tools=()):
             return unavailable("source-symlink")
         digest = hashlib.sha256()
         components = {}
+        worker = os.fsencode(Path(env["VPDF_BUILD_WORKER"]).parent)
+
+        def portable(data):
+            # Pool workers share receipts for equal inputs.
+            return data.replace(worker, b"<worker>")
 
         def add(value, component):
-            data = json.dumps(value, sort_keys=True).encode()
+            data = portable(json.dumps(value, sort_keys=True).encode())
             data = len(data).to_bytes(8, "big") + data
             digest.update(data)
             components.setdefault(component, hashlib.sha256()).update(data)
@@ -172,7 +209,7 @@ def fingerprint(root, env, details=None, *, tools=()):
                 {0, 1} if args[0] == "show-ref" else {0}
             ):
                 return unavailable("git-input-unavailable")
-            add(result.stdout.hex(), component)
+            add(portable(result.stdout).hex(), component)
         environment = dict(env)
         environment["PATH"] = os.pathsep.join(
             dict.fromkeys(
@@ -183,9 +220,11 @@ def fingerprint(root, env, details=None, *, tools=()):
         )
         add(
             {
-                key: value
+                key: "set" if key in PRESENCE else value
                 for key, value in environment.items()
-                if key not in TRANSIENT and not key.startswith("__MISE_")
+                if (key in INPUTS | PRESENCE or key.startswith(INPUT_PREFIXES))
+                and key not in TRANSIENT
+                and DEFAULTS.get(key) != value
             },
             "environment",
         )
@@ -203,8 +242,12 @@ def fingerprint(root, env, details=None, *, tools=()):
             if result.returncode:
                 return unavailable("tool-failed")
             executable = Path(tool).resolve()
-            info = executable.stat()
-            add([str(executable), info.st_size, info.st_mtime_ns], "tools")
+            if executable.is_relative_to(root.resolve()):
+                # Source digests cover snapshot shims.
+                add(str(executable.relative_to(root.resolve())), "tools")
+            else:
+                info = executable.stat()
+                add([str(executable), info.st_size, info.st_mtime_ns], "tools")
             add((result.stdout + result.stderr).hex(), "tools")
         corpus = root / env.get("VPDF_CORPUS", "tmp/corpus")
         if corpus.is_symlink():
@@ -277,7 +320,9 @@ def output_state(root, paths):
         info = path.lstat()
         if not stat.S_ISREG(info.st_mode):
             raise ValueError("Validation output must be a regular file")
-        state[str(name)] = [stat.S_IMODE(info.st_mode), digest_file(path)]
+        # Relative keys match across pool workers.
+        key = os.path.relpath(path, root)
+        state[key] = [stat.S_IMODE(info.st_mode), digest_file(path)]
     return state
 
 

@@ -1,3 +1,7 @@
+import contextlib
+import fcntl
+import hashlib
+import io
 import os
 import shutil
 import signal
@@ -10,6 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from tools.build import cache as build_cache
+from tools.build import cleanup
 
 
 class CacheTests(unittest.TestCase):
@@ -311,6 +316,75 @@ class CacheTests(unittest.TestCase):
                 if process and process.poll() is None:
                     process.kill()
                     process.wait()
+
+    def test_pool_size(self):
+        self.assertEqual(build_cache.pool_size({}), 4)
+        self.assertEqual(build_cache.pool_size({"VPDF_BUILD_WORKERS": "3"}), 3)
+
+    def test_budget_scales_with_pool(self):
+        env = {"VPDF_BUILD_WORKERS": "3"}
+        self.assertEqual(
+            build_cache.cache_limit(env),
+            3 * build_cache.DEFAULT_GIB * 1024**3,
+        )
+        env["VPDF_BUILD_CACHE_GIB"] = "2"
+        self.assertEqual(build_cache.cache_limit(env), 2 * 1024**3)
+
+    def test_cleanup_reclaims_removed_state(self):
+        cache = self.build.parent
+        removed, busy = self.root / "removed", self.root / "busy"
+        names = {
+            path: hashlib.sha256(os.fsencode(path)).hexdigest()
+            for path in [removed, busy]
+        }
+        for name in names.values():
+            (self.build / name[:16]).mkdir(parents=True)
+        (self.build / "worker").mkdir()
+        affinity = cache / "affinity" / names[removed]
+        affinity.parent.mkdir()
+        affinity.write_text("worker")
+        records = cache / "receipts"
+        records.mkdir()
+        checks = cache / "checks"
+        checks.mkdir()
+        for path in [
+            records / "old.json",
+            checks / "old.log",
+            checks / "old.lock",
+            checks / "held.lock",
+            checks / "merge.lock",
+        ]:
+            path.touch()
+            os.utime(path, (0, 0))
+        (records / "new.json").touch()
+        orphan, live = cache.parent / "orphan", cache.parent / "live"
+        for other, origin in [(orphan, self.root / "gone"), (live, self.root)]:
+            other.mkdir()
+            (other / "origin").write_bytes(os.fsencode(origin))
+        leases = cache / "leases"
+        leases.mkdir()
+        with (
+            build_cache.locked(checks / "held.lock", fcntl.LOCK_SH),
+            build_cache.locked(leases / names[busy][:16], fcntl.LOCK_SH),
+            patch.dict(os.environ, self.env, clear=True),
+            patch.object(sys, "argv", ["cleanup", str(removed), str(busy)]),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(cleanup.main(), 0)
+        self.assertFalse((self.build / names[removed][:16]).exists())
+        self.assertTrue((self.build / names[busy][:16]).exists())
+        self.assertTrue((self.build / "worker").exists())
+        self.assertFalse(affinity.exists())
+        self.assertEqual(
+            [path.name for path in records.iterdir()], ["new.json"]
+        )
+        self.assertEqual(
+            sorted(path.name for path in checks.iterdir()),
+            ["held.lock", "merge.lock"],
+        )
+        self.assertTrue((leases / names[busy][:16]).exists())
+        self.assertFalse(orphan.exists())
+        self.assertTrue(live.exists())
 
 
 if __name__ == "__main__":

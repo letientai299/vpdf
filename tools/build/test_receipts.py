@@ -3,6 +3,7 @@ import io
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -288,8 +289,51 @@ class FingerprintTests(unittest.TestCase):
                 MISE_TASK_COLOR="0",
                 MISE_TASK_PGID_MANAGED="1234",
                 CODEX_TOOL_CALL_ID="different-call",
+                CARGO_BUILD_JOBS="7",
+                NEXTEST_TEST_THREADS="9",
+                VPDF_BUILD_WORKERS="3",
             ),
         )
+
+    def test_session_variables_ignored(self):
+        self.assertEqual(
+            self.identity(),
+            self.identity(
+                TERM="xterm-kitty",
+                XDG_SESSION_ID="4",
+                LC_SSH_ALIAS="host",
+                MISE_SHELL="zsh",
+                GIT_EXEC_PATH="/usr/lib/git-core",
+                RUN="simulation",
+            ),
+        )
+        self.assertNotEqual(self.identity(), self.identity(LANG="C"))
+        self.assertEqual(
+            self.identity(TMUX_PANE="%1", SSH_TTY="/dev/pts/1"),
+            self.identity(TMUX_PANE="%2", SSH_TTY="/dev/pts/2"),
+        )
+        self.assertNotEqual(self.identity(), self.identity(TMUX_PANE="%1"))
+
+    def test_explicit_defaults_ignored(self):
+        self.assertEqual(
+            self.identity(),
+            self.identity(
+                CARGO_INCREMENTAL="0",
+                NEXTEST_RETRIES="0",
+                VPDF_BENCH_EVENTS="0",
+            ),
+        )
+
+    def test_worker_paths_portable(self):
+        def worker(name, target=None):
+            directory = Path("/cache/build") / name
+            return self.identity(
+                VPDF_BUILD_WORKER=str(directory / "source"),
+                CARGO_TARGET_DIR=str(target or directory / "target"),
+            )
+
+        self.assertEqual(worker("worker"), worker("worker-2"))
+        self.assertNotEqual(worker("worker"), worker("worker", "/target"))
 
     def test_cargo_config_disables(self):
         config = self.root / ".cargo/config.toml"
@@ -353,7 +397,7 @@ class FingerprintTests(unittest.TestCase):
 
     def test_diagnostics_hide_values(self):
         env = self.env | {
-            "EXAMPLE_API_KEY": "private-token",
+            "CARGO_REGISTRY_TOKEN": "private-token",
             "XDG_CACHE_HOME": str(self.root / "cache"),
         }
         first = {}
@@ -361,7 +405,7 @@ class FingerprintTests(unittest.TestCase):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             receipts.diagnose(self.root, env, "test", identity, first, False)
-            env["EXAMPLE_API_KEY"] = "other-private-token"
+            env["CARGO_REGISTRY_TOKEN"] = "other-private-token"
             second = {}
             identity = receipts.fingerprint(self.root, env, second)
             receipts.diagnose(self.root, env, "test", identity, second, False)
@@ -412,6 +456,19 @@ class FingerprintTests(unittest.TestCase):
             self.assertIsNone(
                 receipts.fingerprint(self.root, self.env, tools=(str(tool),))
             )
+
+    def test_snapshot_tool_timestamps_ignored(self):
+        tools = self.root / "tools"
+        tools.mkdir()
+        shim = tools / "python3"
+        shim.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')
+        shim.chmod(0o755)
+        (self.root / ".gitignore").write_text("/corpus/\n/tools/\n")
+        path = str(tools) + os.pathsep + self.env["PATH"]
+        original = self.identity(PATH=path)
+        self.assertIsNotNone(original)
+        os.utime(shim, (0, 0))
+        self.assertEqual(self.identity(PATH=path), original)
 
     def test_tool_failure_disables(self):
         with patch.object(receipts, "TOOLS", ("missing-vpdf-tool",)):

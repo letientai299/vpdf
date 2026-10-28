@@ -10,6 +10,8 @@ validation.
   existing code; avoid unrelated refactors or lint suppressions.
 - Inspect diffs and stage explicit task paths only. Commit, push, publish, or
   rewrite history only when requested. Never merge pull requests.
+- Work in one [Worktrunk][wt] worktree per task. Update `main` only through
+  `mise run merge`; its gate checks the rebased tip before fast-forwarding.
 - Do not use `git stash` in worktrees; the stash is shared.
 - Use lowercase Conventional Commit subjects without scopes.
 - Never expose credentials or commit private PDFs, raw captures, or scratch
@@ -20,7 +22,8 @@ validation.
 - Preserve source PDFs; keep reading state outside them. Respect native-handle
   thread ownership and keep expensive work off the interaction thread.
 - Use tasks from [mise.toml][tasks]. For code changes, run `mise run lint` and
-  `mise run test`; inspect automatic fixes. Do not bypass commit hooks.
+  `mise run test`; inspect automatic fixes. Do not bypass Git or merge hooks.
+  Commit hooks test affected code; push and merge hooks run the CI recipe.
 - Add meaningful tests for behavior changes. Use the relevant corpus/OCR checks
   for extraction, rendering, search, or worker changes.
 - Live-test terminal windows must never take keyboard focus or be raised, and
@@ -83,6 +86,7 @@ validation.
 - Separate headings and lists from surrounding text with blank lines.
 
 [dev]: docs/dev/dev.md
+[wt]: docs/dev/dev.md#parallel-worktrees
 [tasks]: .config/mise.toml
 [docs]: docs/readme.md
 [demos]: docs/demos.md

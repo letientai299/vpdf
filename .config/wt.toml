@@ -1,0 +1,12 @@
+# Worktrunk hooks for parallel worktrees; see docs/dev/dev.md.
+
+[post-start]
+# Share verified corpus PDFs instead of downloading.
+corpus = "test -d {{ primary_worktree_path }}/tmp/corpus && mkdir -p tmp && cp -al {{ primary_worktree_path }}/tmp/corpus tmp/ || true"
+
+[pre-merge]
+# Check the merged tip; an unchanged tip reuses its push check.
+verify = "mise run hook:verify"
+
+[post-remove]
+cache = "mise run cache:prune {{ worktree_path }}"

@@ -85,22 +85,22 @@ refer to the shared snapshot; its sources reflect the most recent request.
 Changed inputs and different profiles, features, or toolchains can still require
 recompilation. Editing remains parallel; shared validation waits for the worker.
 
-The default remains one worker. Experiment with a bounded pool using
-`VPDF_BUILD_WORKERS=2 mise run validate`. Each worker owns its source snapshot,
-Git metadata, build state, and outputs. Requests prefer their worktree's
-previous worker and use another idle worker when available. Successful receipts
-remain in the repository cache. Worker-specific paths can still prevent receipt
-reuse across workers.
+The [cache manager][build-cache] runs a pool of four workers. Set
+`VPDF_BUILD_WORKERS` to override the count, with the same value in every
+worktree. Each worker owns its
+source snapshot, Git metadata, build state, and outputs. Requests prefer their
+worktree's previous worker and use another idle worker when available.
+Receipts ignore worker paths, so a check that passed on one worker satisfies
+matching requests on any worker.
 
-The pool splits the configured compiler and test concurrency totals between
-workers; it validates those totals before queuing. Single-worker requests
-reserve both resource slots. Pool requests also hold shared admission leases,
-so older launchers using the original exclusive worker lease serialize with
-the pool. Pool snapshots must contain updated validation scripts so child
-processes retain every lease; use the default mode for older snapshots.
-Direct Cargo and benchmark commands
-also do not participate in this budget. All worker caches share the disk budget,
-and active worker leases prevent pruning.
+Each worker defaults to 16 compiler jobs and 16 test threads; `CARGO_BUILD_JOBS`
+and `NEXTEST_TEST_THREADS` override those per-worker limits. Single-worker
+requests reserve the whole pool. Pool requests also hold shared admission
+leases, so older launchers using the original exclusive worker lease serialize
+with the pool. Snapshots with older validation scripts use only the workers
+their child processes can lease. Direct Cargo and benchmark commands do not
+participate in this budget. All worker caches share the disk budget, and active
+worker leases prevent pruning.
 
 Run `mise run validate` for final code validation. It captures the working
 inputs before waiting, then runs read-only lint, the full test suite, and a
@@ -118,12 +118,13 @@ change; it does not establish that the changed input can safely be ignored.
 Successful lint and test checks write local receipts outside the worker's
 mutable directory. `mise run test`, validation, and hooks reuse them only for
 matching source contents and modes, Git revision, tags and configuration,
-environment, tools,
-and corpus contents. A full test receipt can cover the affected Rust test
-subset; an affected subset cannot cover the full suite. The CI recipe records
-feature and packaging checks separately; standard-test receipts cannot cover
-them. Changed provenance invalidates receipts even
-when source contents match. Receipts are local evidence, not CI results.
+build-relevant environment variables, tools, and corpus contents. The
+[receipt manager][validation] lists the variables; session variables such as
+`TERM` or Git hook helpers do not prevent reuse. A full test receipt can cover
+the affected Rust test subset; an affected subset cannot cover the full suite.
+The CI recipe records feature and packaging checks separately; standard-test
+receipts cannot cover them. Changed provenance invalidates receipts even when
+source contents match. Receipts are local evidence, not CI results.
 
 Set `VPDF_VALIDATE_FORCE=1` to rerun checks. CI, isolated execution, source or
 corpus symlinks, unavailable tools, and custom compiler wrappers or flags
@@ -150,25 +151,28 @@ Direct Cargo and benchmark tasks retain their existing local behavior. Corpus
 inputs stay in the caller's `tmp/` directory and are linked into the snapshot
 instead of copied. Shared tests can fetch their existing corpus inputs there.
 
-`CARGO_BUILD_JOBS` and `NEXTEST_TEST_THREADS` override the worker's concurrency
-limits. For a single worker, an opt-in test limit can be set per invocation:
+Lower the limits on a host shared with benchmarks or interactive checks:
 
 ```sh
-VPDF_BUILD_WORKERS=1 NEXTEST_TEST_THREADS=8 mise run test
+CARGO_BUILD_JOBS=8 NEXTEST_TEST_THREADS=8 mise run validate
 ```
 
-Choose the limit for available CPU and memory; this does not change the default
-or relax the worker pool's total budget checks. The worker also applies the
-compiler limit to MuPDF's Make invocation, which otherwise selects all available
-CPUs. Defaults live in the worker. Development builds retain line tables and
-disable incremental compilation to limit disk use.
+The worker also applies the compiler limit to MuPDF's Make invocation, which
+otherwise selects all available CPUs. Development builds use CI's optimization
+level, which runs the test suite about three times faster, retain line tables,
+and disable incremental compilation to limit disk use.
 
 The [cache manager][build-cache] bounds intermediate storage under one
 repository cache in the user cache directory. The worker's source, intermediate
 artifacts, and final outputs share that budget with direct Cargo's isolated
-caches. Active commands protect their caches until exit and can temporarily
-exceed the budget. Set `VPDF_BUILD_CACHE_GIB` to override the budget. Worktree
-removal preserves the warm worker cache for reuse.
+caches. The budget defaults to 20 GiB per pool worker. Active commands protect
+their caches until exit and can temporarily exceed the budget. Set
+`VPDF_BUILD_CACHE_GIB` to override the budget. Worktree removal preserves the
+warm worker caches for reuse.
+
+`mise run cache:prune` prunes to the budget, expires receipts and diagnostics
+after two weeks, and removes caches of deleted repositories.
+Pass removed worktree paths to also delete their direct Cargo caches.
 
 Set `VPDF_BUILD_MODE=isolated` to run a task in its calling worktree without
 the shared worker. An explicit `CARGO_BUILD_BUILD_DIR` also opts out and stays
@@ -177,6 +181,24 @@ also keeps its normal behavior; use `mise exec -- cargo ...` for managed direct
 builds.
 Explicit manifest, build-directory, target, profile, or artifact-selection flags
 also run in the caller so their paths and output selection keep their meaning.
+
+## Parallel worktrees
+
+Use [Worktrunk][worktrunk], which Mise installs, to give each task its own
+worktree. Approve the [project hooks][wt-hooks] once with
+`wt config approvals add`:
+
+- New worktrees hard-link verified corpus PDFs from the primary worktree.
+- `wt merge` runs `mise run hook:verify` on the merged tip before
+  fast-forwarding `main`. A single-commit branch on `main` keeps its tip and
+  reuses its push-check receipts.
+- `wt remove` runs `mise run cache:prune` for the removed worktree.
+
+Merge with `mise run merge`, which queues `wt merge` behind any running merge.
+`wt merge` squashes, rebases, checks, and fast-forwards. Squashing several
+commits or rebasing creates a new commit that is checked again, so squash with
+`wt step squash` before pushing. Queuing avoids checking a tip that another
+merge then makes stale.
 
 ## Native window
 
@@ -283,6 +305,7 @@ mise run hooks
 mise run check
 mise run lint
 mise run test
+mise run validate
 ```
 
 The default test task includes Rust documentation examples. Run
@@ -328,8 +351,8 @@ data out of the user cache.
 formats staged Rust, Python, Markdown, and TOML files, then runs tests for
 changed crates and their reverse dependents. Known Python changes run their
 own test groups. Prose changes skip tests; shared fixtures, build inputs, and
-unknown impact select full tests. [Nextest filtersets][nextest-filters] preserve
-downstream unit and integration coverage.
+unknown impact select full tests. [Nextest filtersets][nextest-filters]
+preserve downstream unit and integration coverage.
 
 Formatting fixes require restaging. Partially staged files are checked from
 the index without changing their working copies. Formatting and tests use a
@@ -338,7 +361,9 @@ snapshot. `mise run hook:commit` repeats this staged check.
 Compilation and shared-code changes can lengthen a commit.
 
 Before a push, every distinct pushed commit tip runs `ci:check` in its own
-snapshot, including tips outside the current branch. The current platform
+snapshot, including tips outside the current branch. Requests for a commit
+already under check wait for that run and reuse its receipts.
+`mise run hook:verify` checks `HEAD` or the given commits. The current platform
 runs the same non-publishing recipe as [CI][ci]: verified corpus preparation,
 read-only lint, standard and benchmark-feature tests, release packing, and
 archive verification. Archive checks validate its checksum, single executable,
@@ -362,8 +387,8 @@ platforms. Hosted artifact uploads, publication, published-binary installation,
 and Homebrew updates remain separate post-push checks. Ignored corpus/OCR
 and app/DMG checks still run separately when applicable.
 
-Branch deletions need no tests. The shared worker serializes validation across
-worktrees and reuses unchanged files and Cargo artifacts across runs.
+Branch deletions need no tests. Each worker reuses unchanged files and Cargo
+artifacts across runs.
 
 Install with `mise run hooks` rather than `prek install`:
 [prek's shim][prek-run] hides unstaged edits before dispatch, preventing
@@ -708,6 +733,8 @@ updating the Homebrew tap. The rolling tag moves; use the snapshot identity when
 a result needs a reproducible release reference.
 
 [tasks]: ../../.config/mise.toml
+[worktrunk]: https://worktrunk.dev/
+[wt-hooks]: ../../.config/wt.toml
 [help-build]: help.md
 [packages]: packages.md
 [mise]: https://mise.jdx.dev/

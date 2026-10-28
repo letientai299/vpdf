@@ -63,6 +63,8 @@ todo = "deny"
 unimplemented = "deny"
 
 [profile.dev]
+# Matches CI; tests run 3x faster than opt-level 0.
+opt-level = 1
 debug = "line-tables-only"
 incremental = false
 

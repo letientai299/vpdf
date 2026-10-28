@@ -10,7 +10,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from tools.build.cache import invoke
+from tools.build.cache import cache_root, invoke, locked
 from tools.build.receipts import run_check
 from tools.build.worker import replace_file, sync_files, worker_snapshot
 
@@ -64,6 +64,13 @@ def snapshot(root, tree):
     env = dict(os.environ)
     for name in git(root, "rev-parse", "--local-env-vars").decode().split():
         env.pop(name, None)
+    # Hooks see Git helpers first; shells do not.
+    helpers = env.pop("GIT_EXEC_PATH", None)
+    env["PATH"] = os.pathsep.join(
+        part
+        for part in env.get("PATH", "").split(os.pathsep)
+        if part != helpers
+    )
     env["VPDF_CACHE"] = "off"
     kind = git(root, "cat-file", "-t", tree).strip()
     revision = tree if kind == b"commit" else None
@@ -149,9 +156,11 @@ PYTHON_TASKS = {
     "tools/demo/window": "test:demo",
     "tools/check/packages": "test:packages",
     "tools/build/cache": "test:build-cache",
+    "tools/build/cleanup": "test:build-cache",
     "tools/build/worker": "test:build-worker",
     "tools/build/features": "test:build-features",
     "tools/check/ci": "test:ci",
+    "tools/check/merge": "test:hooks",
 }
 PACKAGING = {
     "tools/package/app.sh",
@@ -403,6 +412,25 @@ def full_checks(root, env):
     )
 
 
+def check_path(root, commit, suffix):
+    checks = cache_root(os.environ, root) / "checks"
+    checks.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return checks / f"{commit}.{suffix}"
+
+
+def verify(root, commit):
+    # A second check of one commit waits, then reuses receipts.
+    with locked(check_path(root, commit, "lock")):
+        print(f"Push commit: {commit}", flush=True)
+        try:
+            with snapshot(root, commit) as (source, env):
+                execute(["mise", "run", "ci:check"], source, env)
+        except subprocess.CalledProcessError:
+            print(f"Push check failed: {commit}", flush=True)
+            raise
+        print(f"Push check passed: {commit}", flush=True)
+
+
 def pre_push(root, stream):
     commits = set()
     for line in stream:
@@ -420,9 +448,7 @@ def pre_push(root, stream):
         commits.add(commit)
         print(f"Push validation: {name}", flush=True)
     for commit in sorted(commits):
-        print(f"Push commit: {commit}", flush=True)
-        with snapshot(root, commit) as (source, env):
-            execute(["mise", "run", "ci:check"], source, env)
+        verify(root, commit)
     return 0
 
 
@@ -480,6 +506,7 @@ def main():
             "install",
             "pre-commit",
             "pre-push",
+            "verify",
             "check",
             "lint",
             "test",
@@ -497,6 +524,10 @@ def main():
         return pre_commit(root)
     elif args.stage == "pre-push":
         return pre_push(root, sys.stdin)
+    elif args.stage == "verify":
+        for name in args.args or ["HEAD"]:
+            commit = git(root, "rev-parse", "--verify", name + "^{commit}")
+            verify(root, commit.decode().strip())
     elif args.stage == "lint":
         check_lint(root, os.environ.copy())
     elif args.stage == "test":

@@ -233,9 +233,15 @@ fn shift_f10_opens_menu_at_focus() -> Result<()> {
   Ok(())
 }
 
+/// A generated text page in text mode, 20 rows tall.
+fn generated_app() -> Result<(tempfile::TempDir, Solo)> {
+  let screen = common::cells(120, 20);
+  common::temp_solo(|path| common::text_pdf(path, &["Info"]), true, screen)
+}
+
 #[test]
 fn info_facts_name_format_and_encryption() -> Result<()> {
-  let app = text_app()?;
+  let (_directory, app) = generated_app()?;
   let info = app.info();
   let facts = info.lines().nth(2).unwrap_or_default();
   assert!(facts.contains(" · PDF 1."), "{facts}");
@@ -246,7 +252,7 @@ fn info_facts_name_format_and_encryption() -> Result<()> {
 
 #[test]
 fn info_search_shows_folded_rows_across_frames() -> Result<()> {
-  let mut app = text_app()?;
+  let (_directory, mut app) = generated_app()?;
   app.command("info")?;
   app.draw(&mut Vec::new())?;
   let panel = &mut app.panel.as_mut().unwrap().view;

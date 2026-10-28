@@ -34,6 +34,7 @@ class WorkerTests(unittest.TestCase):
             XDG_CACHE_HOME=str(self.root / "cache"),
             CARGO_HOME=str(self.root / "cargo-home"),
             NEXTEST_TEST_THREADS="4",
+            VPDF_BUILD_WORKERS="1",
             GIT_CONFIG_GLOBAL=os.devnull,
             GIT_CONFIG_NOSYSTEM="1",
         )
@@ -593,8 +594,8 @@ class WorkerTests(unittest.TestCase):
         with patch.dict(os.environ, VPDF_BUILD_WORKERS="2"):
             with self.snapshot() as (first, first_env):
                 self.assertEqual(first.parent.name, "worker")
-                self.assertEqual(first_env["CARGO_BUILD_JOBS"], "2")
-                self.assertEqual(first_env["NEXTEST_TEST_THREADS"], "2")
+                self.assertEqual(first_env["CARGO_BUILD_JOBS"], "16")
+                self.assertEqual(first_env["NEXTEST_TEST_THREADS"], "4")
                 (self.other / "src/value.rs").write_text("other snapshot")
                 with self.snapshot(self.other) as (second, second_env):
                     self.assertEqual(second.parent.name, "worker-2")
@@ -698,31 +699,53 @@ class WorkerTests(unittest.TestCase):
                     broken = env | {"VPDF_BUILD_RESOURCE_FDS": "1:999999"}
                     self.assertEqual(build_cache.worker_descriptors(broken), ())
 
+    def test_pool_of_three(self):
+        third = self.root / "third"
+        self.git("worktree", "add", "-qb", "third", str(third))
+        with (
+            patch.dict(os.environ, VPDF_BUILD_WORKERS="3"),
+            self.snapshot() as (first, first_env),
+            self.snapshot(self.other) as (second, _),
+            self.snapshot(third) as (last, last_env),
+        ):
+            self.assertEqual(
+                [first.parent.name, second.parent.name, last.parent.name],
+                ["worker", "worker-2", "worker-3"],
+            )
+            self.assertEqual(first_env["CARGO_BUILD_JOBS"], "16")
+            self.assertEqual(last_env["NEXTEST_TEST_THREADS"], "4")
+            self.assertIn("2:", last_env["VPDF_BUILD_RESOURCE_FDS"])
+
     def test_invalid_pool_limits(self):
         for changes in [
             {"VPDF_BUILD_WORKERS": "0"},
-            {"VPDF_BUILD_WORKERS": "3"},
+            {"VPDF_BUILD_WORKERS": "9"},
             {"VPDF_BUILD_WORKERS": "invalid"},
-            {"VPDF_BUILD_WORKERS": "2", "CARGO_BUILD_JOBS": "8"},
-            {"VPDF_BUILD_WORKERS": "2", "CARGO_BUILD_JOBS": "1"},
-            {"VPDF_BUILD_WORKERS": "2", "NEXTEST_TEST_THREADS": "default"},
         ]:
             with self.subTest(changes=changes), patch.dict(os.environ, changes):
                 with self.assertRaises(ValueError), self.snapshot():
                     pass
 
-    def test_legacy_snapshot_rejected(self):
+    def test_legacy_snapshot_serializes(self):
         self.write("tools/build/cache.py", "# older validation scripts\n")
-        with patch.dict(os.environ, VPDF_BUILD_WORKERS="2"):
-            with (
-                self.assertRaisesRegex(
-                    ValueError, "updated validation scripts"
-                ),
-                self.snapshot(),
-            ):
-                pass
-        with self.snapshot():
-            pass
+        with (
+            patch.dict(os.environ, VPDF_BUILD_WORKERS="2"),
+            self.snapshot() as (source, env),
+        ):
+            self.assertEqual(source.parent.name, "worker")
+            self.assertEqual(len(env["VPDF_BUILD_RESOURCE_FDS"].split(",")), 2)
+
+    def test_two_slot_snapshot_keeps_pool(self):
+        for root in [self.repo, self.other]:
+            path = root / "tools/build/cache.py"
+            path.parent.mkdir(parents=True)
+            path.write_text("WORKER_PROTOCOL = 2\n")
+        with (
+            patch.dict(os.environ, VPDF_BUILD_WORKERS="4"),
+            self.snapshot(),
+            self.snapshot(self.other) as (second, _),
+        ):
+            self.assertEqual(second.parent.name, "worker-2")
 
     def test_native_limit(self):
         counter = self.root / "counter.py"

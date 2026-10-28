@@ -11,23 +11,36 @@ import sys
 from pathlib import Path
 
 DEFAULT_GIB = 20
-WORKER_PROTOCOL = 2
+WORKER_PROTOCOL = 3
+MAX_WORKERS = 8
+DEFAULT_WORKERS = 4
+# Per worker; also caps MuPDF's Make.
+WORKER_JOBS = 16
 SHIMS = Path(__file__).resolve().parents[1] / "shims"
 
 
-def cache_key(root):
+def cache_identity(root):
     result = subprocess.run(
         ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
         cwd=root,
         capture_output=True,
         check=False,
     )
-    identity = (
-        result.stdout.strip()
-        if result.returncode == 0
-        else os.fsencode(root.resolve())
-    )
-    return hashlib.sha256(identity).hexdigest()[:16]
+    if result.returncode == 0:
+        return result.stdout.strip()
+    return os.fsencode(root.resolve())
+
+
+def cache_key(root):
+    return hashlib.sha256(cache_identity(root)).hexdigest()[:16]
+
+
+def mark_origin(cache, root):
+    # Cleanup removes caches whose repository is gone.
+    marker = cache / "origin"
+    identity = cache_identity(root)
+    if not marker.exists() or marker.read_bytes() != identity:
+        marker.write_bytes(identity)
 
 
 def cache_root(env, source=None):
@@ -40,6 +53,21 @@ def cache_root(env, source=None):
             "Library/Caches" if sys.platform == "darwin" else ".cache"
         )
     return Path(base).resolve() / "vpdf-build" / key
+
+
+def pool_size(env):
+    count = int(env.get("VPDF_BUILD_WORKERS", DEFAULT_WORKERS))
+    if not 1 <= count <= MAX_WORKERS:
+        raise ValueError(f"Worker count must be between 1 and {MAX_WORKERS}")
+    return count
+
+
+def cache_limit(env):
+    gib = env.get("VPDF_BUILD_CACHE_GIB")
+    limit = (float(gib) if gib else DEFAULT_GIB * pool_size(env)) * 1024**3
+    if not 0 < limit < float("inf"):
+        raise ValueError("Build cache budget must be positive")
+    return limit
 
 
 def cache_bytes(path):
@@ -138,7 +166,7 @@ def worker_descriptors(env):
             None, env.get("VPDF_BUILD_RESOURCE_FDS", "").split(",")
         ):
             slot, descriptor = item.split(":")
-            if slot not in {"0", "1", "gate"}:
+            if slot != "gate" and not slot.isdigit():
                 return ()
             name = "worker" if slot == "gate" else f"budget-{slot}"
             expected.append((name, int(descriptor)))
@@ -205,10 +233,9 @@ def run(args):
         arg in {"--version", "-V", "--help", "-h", "--list"} for arg in options
     ):
         return invoke([cargo, *args], env=env)
-    limit = float(env.get("VPDF_BUILD_CACHE_GIB", DEFAULT_GIB)) * 1024**3
-    if not 0 < limit < float("inf"):
-        raise ValueError("Build cache budget must be positive")
+    limit = cache_limit(env)
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    mark_origin(root, source)
     leases = root / "leases"
     leases.mkdir(exist_ok=True)
     try:
