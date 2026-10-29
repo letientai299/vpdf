@@ -184,6 +184,39 @@ class HelpAssetTests(unittest.TestCase):
             help.export_pdf(self.root, self.output, self.generation)
             self.assertEqual(export.call_count, 2)
 
+    def test_export_reuses_generation_manual(self):
+        self.output.mkdir(parents=True)
+        export = Mock(side_effect=lambda path: path.write_bytes(b"manual"))
+        executable = self.root / "help-pdf"
+        pdf = self.output / "help.pdf"
+        base = self.output / "base.pdf"
+        base.write_bytes(b"base")
+        with patch.object(help, "run", side_effect=self.export_run(export)):
+            help.export_pdf(self.root, self.output, self.generation)
+            executable.write_bytes(b"rebuilt exporter")
+            help.export_pdf(
+                self.root, self.output, self.generation, executable, True
+            )
+            self.assertEqual(export.call_count, 1)
+            self.assertFalse(help.published(self.output, "b" * 64))
+            for change in [
+                lambda: pdf.write_bytes(b"broken"),
+                pdf.unlink,
+                lambda: (pdf.unlink(), pdf.symlink_to(base.name)),
+            ]:
+                with self.subTest(change=change):
+                    change()
+                    help.export_pdf(
+                        self.root,
+                        self.output,
+                        self.generation,
+                        executable,
+                        True,
+                    )
+                    self.assertFalse(pdf.is_symlink())
+                    self.assertEqual(pdf.read_bytes(), b"manual")
+            self.assertEqual(export.call_count, 2)
+
     def test_export_entries_bounded(self):
         self.output.mkdir(parents=True)
         export = self.export_run(lambda path: path.write_bytes(b"manual"))
@@ -285,6 +318,40 @@ class HelpAssetTests(unittest.TestCase):
             help.main()
         export.assert_not_called()
         self.assertTrue((self.check() / "base.pdf").is_file())
+
+    def test_reuse_needs_exporter_generation(self):
+        with patch.object(help, "render", side_effect=self.render):
+            name = self.prepare().name
+        facts = self.root / "facts.json"
+        facts.write_text(json.dumps(self.facts))
+        (self.output / ".current").write_text(name + "\n")
+        for source, reuse in [
+            ([], True),
+            (["--facts", str(facts)], False),
+            (["--current"], False),
+        ]:
+            with (
+                self.subTest(source=source),
+                patch(
+                    "sys.argv",
+                    [
+                        "assets",
+                        "--reuse",
+                        "--exporter",
+                        str(self.root / "help-pdf"),
+                        "--output",
+                        str(self.output),
+                        *source,
+                    ],
+                ),
+                patch.object(help, "ROOT", self.root),
+                patch.object(help, "run", return_value=name + "\n"),
+                patch.object(help, "generation_facts", return_value=self.facts),
+                patch.object(help, "export_pdf") as export,
+                patch("builtins.print"),
+            ):
+                help.main()
+                self.assertEqual(export.call_args.args[4], reuse)
 
     def test_incomplete_and_corrupt_outputs(self):
         with patch.object(help, "render", side_effect=self.render):

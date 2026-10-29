@@ -37,18 +37,20 @@ recomputing facts.
 
 Outputs live in fingerprint directories under `target/help`, respecting
 `CARGO_TARGET_DIR`. Mise build tasks export the readable, composed manual to
-`target/help/help.pdf`, including built-in references and resolved links. The
-export cache keeps a verified PDF for each of the four most recent exporter
-hashes, so switching profiles reuses those entries. Reader builds compile the
-exporter alongside the frontend in the same Cargo invocation and profile;
-standalone help builds check the host exporter before each lookup. Changed
-inputs rebuild it. Missing or corrupt cache entries regenerate; failed exports
-leave the previous PDF intact. The fingerprinted `base.pdf` contains placeholder
-colors for runtime composition. Use the same `CARGO_TARGET_DIR` for generation
-and Cargo, including when passing Cargo's `--target-dir`. A clean source build
-generates assets. Application execution needs neither source files nor
-generation tools. `--version` verifies the bundled hashes and reports their
-shared identity.
+`target/help/help.pdf`, including built-in references and resolved links. Debug
+builds keep a manual whose export receipt names the same generation, so code
+edits skip the export. Run `mise run help:build` after changing [runtime
+composition][runtime]. The export cache keeps a verified PDF for each of the
+four most recent exporter hashes, so switching profiles reuses those entries.
+Reader builds compile the exporter alongside the frontend in the same Cargo
+invocation and profile; standalone help builds check the host exporter before
+each lookup. Changed inputs rebuild it. Missing or corrupt cache entries
+regenerate; failed exports leave the previous PDF intact. The fingerprinted
+`base.pdf` contains placeholder colors for runtime composition. Use the same
+`CARGO_TARGET_DIR` for generation and Cargo, including when passing Cargo's
+`--target-dir`. A clean source build generates assets. Application execution
+needs neither source files nor generation tools. `--version` verifies the
+bundled hashes and reports their shared identity.
 
 ## Delivery checks
 

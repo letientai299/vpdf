@@ -64,7 +64,7 @@ TRANSIENT = {
     "CARGO_BUILD_JOBS",
     "NEXTEST_TEST_THREADS",
 }
-# Explicit defaults match unset values.
+# These values never change check results.
 DEFAULTS = {
     "CARGO_INCREMENTAL": "0",
     "NEXTEST_RETRIES": "0",

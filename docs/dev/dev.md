@@ -160,12 +160,14 @@ CARGO_BUILD_JOBS=8 NEXTEST_TEST_THREADS=8 mise run validate
 The worker also applies the compiler limit to MuPDF's Make invocation, which
 otherwise selects all available CPUs. Development builds use CI's optimization
 level, which runs the test suite about three times faster, retain line tables,
-and disable incremental compilation to limit disk use. Mise enables Cargo's
-unstable workspace [feature unification][unification], so both readers, tests,
-checks, and the help exporter share dependency builds. The optimized build
-scripts restore per-package resolution. They build the help exporter in the
-same invocation, so `vpdf-dev` must not add features to the reader's
-dependencies.
+and compile workspace crates incrementally. Incremental state counts toward the
+cache budget; direct builds grow `target/` outside it. `ci:check` disables it,
+as CI does. Build scripts and their dependencies use the same
+optimization level, so help facts finish sooner. Mise enables Cargo's unstable
+workspace [feature unification][unification], so both readers, tests, checks,
+and the help exporter share dependency builds. The optimized build scripts
+restore per-package resolution. They build the help exporter in the same
+invocation, so `vpdf-dev` must not add features to the reader's dependencies.
 
 The [cache manager][build-cache] bounds intermediate storage under one
 repository cache in the user cache directory. The worker's source, intermediate

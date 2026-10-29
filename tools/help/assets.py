@@ -298,10 +298,14 @@ def build_exporter(root):
     return executable
 
 
-def cached_export(directory, identity):
+def cached_export(directory, identity, generation):
     pdf = directory / "help.pdf"
     try:
-        expected = {"executable": identity, "pdf": digest(pdf.read_bytes())}
+        expected = {
+            "executable": identity,
+            "generation": generation,
+            "pdf": digest(pdf.read_bytes()),
+        }
         if (
             not pdf.is_symlink()
             and json.loads((directory / "receipt.json").read_bytes())
@@ -313,32 +317,52 @@ def cached_export(directory, identity):
     return None
 
 
-def export_pdf(root, output, generation, executable=None):
+def published(output, generation):
+    pdf = output / "help.pdf"
+    try:
+        if pdf.is_symlink():
+            return False
+        checksum = digest(pdf.read_bytes())
+        entries = list((output / ".exports").iterdir())
+    except OSError:
+        return False
+    return any(
+        cached_export(entry, entry.name, generation) == checksum
+        for entry in entries
+    )
+
+
+def export_pdf(root, output, generation, executable=None, reuse=False):
     executable = executable or build_exporter(root)
     with (output / ".export.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        with tempfile.TemporaryDirectory(
-            prefix=".export-", dir=output
-        ) as temporary:
-            # Concurrent Cargo runs may replace the original.
-            copy = Path(temporary) / executable.name
-            shutil.copy2(executable, copy)
-            if run(str(copy), "--fingerprint", cwd=root).strip() != generation:
-                raise ValueError("Help exporter embeds another generation")
-            with copy.open("rb") as stream:
-                identity = hashlib.file_digest(stream, "sha256").hexdigest()
-            publish_pdf(root, output, copy, identity, Path(temporary))
+        if not (reuse and published(output, generation)):
+            export_manual(root, output, generation, executable)
         staged = output / ".current.tmp"
         staged.write_text(generation + "\n")
         staged.replace(output / ".current")
 
 
-def publish_pdf(root, output, executable, identity, temporary):
+def export_manual(root, output, generation, executable):
+    with tempfile.TemporaryDirectory(
+        prefix=".export-", dir=output
+    ) as temporary:
+        # Concurrent Cargo runs may replace the original.
+        copy = Path(temporary) / executable.name
+        shutil.copy2(executable, copy)
+        if run(str(copy), "--fingerprint", cwd=root).strip() != generation:
+            raise ValueError("Help exporter embeds another generation")
+        with copy.open("rb") as stream:
+            identity = hashlib.file_digest(stream, "sha256").hexdigest()
+        publish_pdf(root, output, copy, identity, generation, Path(temporary))
+
+
+def publish_pdf(root, output, executable, identity, generation, temporary):
     pdf = output / "help.pdf"
     exports = output / ".exports"
     directory = exports / identity
     cached = directory / "help.pdf"
-    checksum = cached_export(directory, identity)
+    checksum = cached_export(directory, identity, generation)
     try:
         if not pdf.is_symlink() and digest(pdf.read_bytes()) == checksum:
             return
@@ -351,7 +375,13 @@ def publish_pdf(root, output, executable, identity, temporary):
         run(str(executable), str(staged), cwd=root, timeout=600)
         record = temporary / "receipt.json"
         record.write_bytes(
-            encode({"executable": identity, "pdf": digest(staged.read_bytes())})
+            encode(
+                {
+                    "executable": identity,
+                    "generation": generation,
+                    "pdf": digest(staged.read_bytes()),
+                }
+            )
         )
         directory.mkdir(parents=True, exist_ok=True)
         copy = temporary / "cached.pdf"
@@ -441,12 +471,15 @@ def main():
     export = parser.add_mutually_exclusive_group()
     export.add_argument("--no-export", action="store_true")
     export.add_argument("--exporter", type=Path)
+    # Code-only edits keep a manual of the same generation.
+    parser.add_argument("--reuse", action="store_true")
     args = parser.parse_args()
     output = (
         args.output
         or Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target")) / "help"
     )
     output = output.resolve()
+    fingerprint = None
     if args.facts:
         facts = json.loads(args.facts.read_bytes())
     elif args.current:
@@ -454,14 +487,17 @@ def main():
         name = (output / ".current").read_text().strip()
         facts = generation_facts(output, name)
     elif args.exporter:
-        name = run(str(args.exporter), "--fingerprint", cwd=ROOT).strip()
-        facts = generation_facts(output, name)
+        fingerprint = run(str(args.exporter), "--fingerprint", cwd=ROOT)
+        fingerprint = fingerprint.strip()
+        facts = generation_facts(output, fingerprint)
     else:
         facts = export_facts(ROOT)
     action = check_assets if args.check else prepare
     directory = action(ROOT, output, facts)
     if not args.check and not args.no_export:
-        export_pdf(ROOT, output, directory.name, args.exporter)
+        # A stale exporter fails the export's generation check.
+        reuse = args.reuse and fingerprint == directory.name
+        export_pdf(ROOT, output, directory.name, args.exporter, reuse)
     if args.verify_pdf:
         check_pdf(directory)
     print(directory)

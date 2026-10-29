@@ -66,7 +66,12 @@ unimplemented = "deny"
 # Matches CI; tests run 3x faster than opt-level 0.
 opt-level = 1
 debug = "line-tables-only"
-incremental = false
+# Cuts a shared-module rebuild from 15 s to 6 s.
+incremental = true
+
+# Help facts run in the build script 3x faster.
+[profile.dev.build-override]
+opt-level = 1
 
 # Fat LTO tripled rebuilds for 1-3% speed.
 [profile.release]
