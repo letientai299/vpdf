@@ -57,6 +57,16 @@ class CacheTests(unittest.TestCase):
         self.assertFalse(list(self.build.iterdir()))
         self.assertEqual(binary.read_bytes(), b"x" * 8192)
 
+    def test_cache_folder_override(self):
+        folder = self.root / "excluded"
+        env = self.env | {"VPDF_BUILD_CACHE": str(folder)}
+        self.assertEqual(
+            build_cache.cache_root(env),
+            folder.resolve() / "vpdf-build/0123456789abcdef",
+        )
+        with self.assertRaises(ValueError):
+            build_cache.cache_root(self.env | {"VPDF_BUILD_CACHE": "relative"})
+
     def test_warm_cache_retained(self):
         artifact = self.artifact()
         build_cache.prune(self.build, 1024**2)

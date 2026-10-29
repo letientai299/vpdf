@@ -140,7 +140,7 @@ run = "python3 -B -m tools.build.worker check"
 
 [tasks."_check"]
 hide = true
-depends = ["check:packages", "help:build"]
+depends = ["check:packages"]
 run = "cargo check --locked --workspace --all-targets"
 
 [tasks."help:build"]
@@ -191,7 +191,6 @@ run = "python3 -B -m tools.build.worker lint:rust"
 
 [tasks."_lint:rust"]
 hide = true
-depends = ["help:build"]
 run = "cargo clippy --locked --workspace --all-targets -- -D warnings"
 
 [tasks."lint:python"]
@@ -215,26 +214,31 @@ hide = true
 env.VPDF_CACHE = "off"
 run = "python3 -B -m tools.check.hooks test"
 
+# Longest first; Rust tests overlap the Python suites.
 [tasks."_test:full"]
 hide = true
-env.VPDF_CACHE = "off"
 depends = [
+  "_test:rust",
+  "test:build-worker",
+  "test:hooks",
+  "test:validation",
+  "test:docs",
+  "test:help-assets",
   "test:demo",
+  "test:bench-report",
+  "test:build-cache",
   "test:display",
   "test:startup",
-  "test:bench-report",
   "test:build-features",
-  "test:build-cache",
-  "test:build-worker",
-  "test:validation",
   "test:packages",
-  "test:hooks",
+  "test:units",
   "test:ci",
-  "test:docs",
-  "help:build",
-  "test:help-assets",
   "check:packages",
 ]
+
+[tasks."_test:rust"]
+hide = true
+env.VPDF_CACHE = "off"
 run = "cargo nextest run --locked --workspace --test-threads \"${NEXTEST_TEST_THREADS:-4}\" --no-fail-fast"
 
 [tasks."test:docs"]
@@ -244,7 +248,6 @@ run = "python3 -B -m tools.build.worker test:docs"
 [tasks."_test:docs"]
 hide = true
 env.VPDF_CACHE = "off"
-depends = ["help:build"]
 run = "cargo test --locked --workspace --doc"
 
 [tasks."test:events"]
@@ -253,7 +256,6 @@ run = "python3 -B -m tools.build.worker test:events"
 
 [tasks."_test:events"]
 hide = true
-depends = ["help:build"]
 env.VPDF_CACHE = "off"
 run = [
   "cargo clippy --locked --workspace --all-targets --features vpdf-gui/bench-events,vpdf-dev/bench-events -- -D warnings",
@@ -263,6 +265,11 @@ run = [
 [tasks."check:packages"]
 description = "Check workspace dependencies and native isolation"
 run = "python3 -B -m tools.check.packages"
+
+[tasks."test:units"]
+hide = true
+description = "Check sharded Python suite results"
+run = "python3 -B -m unittest discover -s tools/check -t . -p test_units.py"
 
 [tasks."test:packages"]
 env.VPDF_CACHE = "off"
@@ -306,7 +313,7 @@ run = "python3 -B -m unittest discover -s tools/check -t . -p test_ci.py"
 hide = true
 env.VPDF_CACHE = "off"
 description = "Test hook snapshots and affected-code routing"
-run = "python3 -B -m unittest discover -s tools/check -t . -p test_hooks.py"
+run = "python3 -B -m tools.check.units -s tools/check -p test_hooks.py"
 
 [tasks.install]
 description = "Install the terminal reader and, on macOS, the app"
@@ -376,12 +383,12 @@ run = "python3 -B -m unittest discover -s tools/build -t . -p test_cache.py"
 [tasks."test:validation"]
 hide = true
 description = "Check validation result reuse"
-run = "python3 -B -m unittest discover -s tools/build -t . -p test_receipts.py"
+run = "python3 -B -m tools.check.units -s tools/build -p test_receipts.py"
 
 [tasks."test:build-worker"]
 hide = true
 description = "Check shared snapshot reuse and isolation"
-run = "python3 -B -m unittest discover -s tools/build -t . -p test_worker.py"
+run = "python3 -B -m tools.check.units -s tools/build -p test_worker.py"
 
 [tasks."corpus:huge"]
 description = "Fetch large stress PDFs into tmp/huge for ad hoc runs"

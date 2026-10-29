@@ -52,7 +52,11 @@ def cache_root(env, source=None):
     key = env.get("VPDF_BUILD_CACHE_ID") or cache_key(source or Path.cwd())
     if len(key) != 16 or any(c not in "0123456789abcdef" for c in key):
         raise ValueError("Invalid build cache identity")
-    base = env.get("XDG_CACHE_HOME")
+    # Endpoint scanners may exclude another folder.
+    base = env.get("VPDF_BUILD_CACHE")
+    if base and not Path(base).is_absolute():
+        raise ValueError("Build cache folder must be absolute")
+    base = base or env.get("XDG_CACHE_HOME")
     if not base:
         base = Path.home() / (
             "Library/Caches" if sys.platform == "darwin" else ".cache"

@@ -61,6 +61,7 @@ TRANSIENT = {
     "VPDF_BUILD_ORIGIN",
     "VPDF_VALIDATE_FORCE",
     "VPDF_BUILD_WORKERS",
+    "VPDF_BUILD_CACHE",
     "CARGO_BUILD_JOBS",
     "NEXTEST_TEST_THREADS",
 }
@@ -126,6 +127,7 @@ def fingerprint(root, env, details=None, *, tools=()):
         "VPDF_BUILD_WORKER_FD",
         "VPDF_BUILD_CACHE_ID",
         "VPDF_BUILD_CACHE_GIB",
+        "VPDF_BUILD_CACHE",
         "VPDF_BUILD_MODE",
         "VPDF_CACHE",
         "VPDF_BENCH_EVENTS",

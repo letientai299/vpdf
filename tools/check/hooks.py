@@ -155,6 +155,7 @@ PYTHON_TASKS = {
     "tools/demo/video": "test:demo",
     "tools/demo/window": "test:demo",
     "tools/check/packages": "test:packages",
+    "tools/check/units": "test:units",
     "tools/build/cache": "test:build-cache",
     "tools/build/cleanup": "test:build-cache",
     "tools/build/worker": "test:build-worker",
@@ -186,6 +187,7 @@ GLOBAL_FILES = {
     "tools/shims/cargo",
     "tools/shims/native/make",
     "tools/check/packages.py",
+    "tools/check/units.py",
 }
 
 
@@ -193,6 +195,7 @@ FULL_TEST_TASKS = {
     "test:startup",
     "test:demo",
     "test:packages",
+    "test:units",
     "test:bench-report",
     "test:build-features",
     "test:build-cache",
@@ -328,7 +331,6 @@ def affected_tests(source, paths, env):
     if owners and not reasons:
         print("Tests: affected " + ", ".join(sorted(owners)), flush=True)
         expression = " | ".join(f"rdeps(={name})" for name in sorted(owners))
-        execute(["mise", "run", "help:build"], source, env)
         command = [
             "cargo",
             "nextest",

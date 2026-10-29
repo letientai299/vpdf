@@ -170,20 +170,23 @@ restore per-package resolution. They build the help exporter in the same
 invocation, so `vpdf-dev` must not add features to the reader's dependencies.
 
 The [cache manager][build-cache] bounds intermediate storage under one
-repository cache in the user cache directory. The worker's source, intermediate
-artifacts, and final outputs share that budget with direct Cargo's isolated
-caches. The budget defaults to 20 GiB per pool worker. Active commands protect
-their caches until exit and can temporarily exceed the budget. Worker and
-direct Cargo commands measure usage while their task runs and prune idle caches
-when over budget. They skip the scan when the last measurement is under five
-minutes old and below three quarters of the budget; a warm cache scan takes
-seconds on macOS. After the task, the volume's free-space drop is added to the
-recorded usage without refreshing its age. Commands scan again before exiting
-when that estimate passes three quarters of the budget, the scan had to evict,
-or the task outlasted the five minutes. Deletions elsewhere on the volume can
-hide growth until the measurement expires. Set `VPDF_BUILD_CACHE_GIB` to
-override the budget. Worktree removal preserves the warm worker caches for
-reuse.
+repository cache in the user cache directory, or in the absolute
+`VPDF_BUILD_CACHE` folder when set. Endpoint scanners that inspect each new file
+slow every build; point `VPDF_BUILD_CACHE` at a folder they exclude. Use the
+same value in every worktree, because the worker pool, budget, receipts, and
+merge queue live in that cache. The worker's source, intermediate artifacts, and
+final outputs share that budget with direct Cargo's isolated caches. The budget
+defaults to 20 GiB per pool worker. Active commands protect their caches until
+exit and can temporarily exceed the budget. Worker and direct Cargo commands
+measure usage while their task runs and prune idle caches when over budget. They
+skip the scan when the last measurement is under five minutes old and below
+three quarters of the budget; a warm cache scan takes seconds on macOS. After
+the task, the volume's free-space drop is added to the recorded usage without
+refreshing its age. Commands scan again before exiting when that estimate passes
+three quarters of the budget, the scan had to evict, or the task outlasted the
+five minutes. Deletions elsewhere on the volume can hide growth until the
+measurement expires. Set `VPDF_BUILD_CACHE_GIB` to override the budget. Worktree
+removal preserves the warm worker caches for reuse.
 
 `mise run cache:prune` prunes to the budget, expires receipts and diagnostics
 after two weeks, and removes caches of deleted repositories.
@@ -357,6 +360,11 @@ mise run test:crate -- vpdf-ui --lib layout::tests
 
 The lint task applies automatic fixes before checking for remaining issues;
 inspect its diff before staging. `lint:check` checks without applying fixes.
+
+`mise run test` runs Rust tests beside the Python suites, and the Git-heavy
+suites run in four [shards][units]. `mise run test`, `check`, clippy, and the
+commit hook get help assets from the reader's build script and skip the manual
+export; `test:help`, `lint:check`, `validate`, builds, and CI still export it.
 
 Validation tasks and Git hooks disable disk caching. Ordinary reader launches
 follow `VPDF_CACHE`. Set `VPDF_CACHE=off` for direct `cargo` tests to keep test
@@ -804,6 +812,7 @@ a result needs a reproducible release reference.
 [ci-script]: ../../tools/check/ci.py
 [hook-script]: ../../tools/check/hooks.py
 [nextest-filters]: https://nexte.st/docs/filtersets/reference/
+[units]: ../../tools/check/units.py
 [prek-run]: https://prek.j178.dev/running-hooks/
 [demo-media]: demo-media.md
 [demo-host]: https://github.com/letientai299/vpdf/issues/9

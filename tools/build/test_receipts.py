@@ -292,6 +292,7 @@ class FingerprintTests(unittest.TestCase):
                 CARGO_BUILD_JOBS="7",
                 NEXTEST_TEST_THREADS="9",
                 VPDF_BUILD_WORKERS="3",
+                VPDF_BUILD_CACHE="/elsewhere",
             ),
         )
 

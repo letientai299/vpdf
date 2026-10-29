@@ -27,7 +27,11 @@ class MergeTests(unittest.TestCase):
                 f"echo \"end $*\" >> '{log}'\n"
             )
             wt.chmod(0o755)
-            env = os.environ | {
+            env = {
+                key: value
+                for key, value in os.environ.items()
+                if key != "VPDF_BUILD_CACHE"
+            } | {
                 "PATH": str(wt.parent) + os.pathsep + os.environ["PATH"],
                 "XDG_CACHE_HOME": str(root / "cache"),
                 "VPDF_BUILD_CACHE_ID": "0123456789abcdef",
@@ -142,6 +146,7 @@ class RoutingTests(unittest.TestCase):
             "tools/new_tool.py",
             "tools/build/features.sh",
             "tools/build/receipts.py",
+            "tools/check/units.py",
             "tools/shims/cargo",
             "crates/missing/src/lib.rs",
         ]:
@@ -162,6 +167,7 @@ class RoutingTests(unittest.TestCase):
             "tools/demo/video.py": "test:demo",
             "tools/demo/test_video.py": "test:demo",
             "tools/check/test_packages.py": "test:packages",
+            "tools/check/test_units.py": "test:units",
             "tools/build/test_cache.py": "test:build-cache",
             "tools/build/test_features.py": "test:build-features",
             "tools/check/ci.py": "test:ci",
@@ -227,9 +233,8 @@ class RoutingTests(unittest.TestCase):
                 {},
             )
         command = run.call_args.args[0]
-        self.assertEqual(
-            run.call_args_list[0].args[0], ["mise", "run", "help:build"]
-        )
+        # Build scripts generate help; tests skip the export.
+        self.assertEqual(run.call_count, 1)
         self.assertEqual(
             command[command.index("-E") + 1], "rdeps(=vpdf) | rdeps(=vpdf-ui)"
         )
@@ -321,7 +326,7 @@ class SnapshotTests(unittest.TestCase):
         env = {
             key: value
             for key, value in os.environ.items()
-            if not key.startswith("GIT_")
+            if not key.startswith(("GIT_", "VPDF_BUILD_CACHE"))
         }
         env.update(
             GIT_CONFIG_GLOBAL=os.devnull,
