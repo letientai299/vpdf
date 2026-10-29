@@ -20,7 +20,7 @@ pub const MANIFEST: &str =
 pub const NOTICES: &str =
   include_str!(concat!(env!("VPDF_HELP_DIR"), "/third-party-notices.txt"));
 
-pub(crate) fn identity() -> String {
+pub fn identity() -> String {
   static IDENTITY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
   IDENTITY.get_or_init(verify_identity).clone()
 }

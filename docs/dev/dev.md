@@ -160,15 +160,28 @@ CARGO_BUILD_JOBS=8 NEXTEST_TEST_THREADS=8 mise run validate
 The worker also applies the compiler limit to MuPDF's Make invocation, which
 otherwise selects all available CPUs. Development builds use CI's optimization
 level, which runs the test suite about three times faster, retain line tables,
-and disable incremental compilation to limit disk use.
+and disable incremental compilation to limit disk use. Mise enables Cargo's
+unstable workspace [feature unification][unification], so both readers, tests,
+checks, and the help exporter share dependency builds. The optimized build
+scripts restore per-package resolution. They build the help exporter in the
+same invocation, so `vpdf-dev` must not add features to the reader's
+dependencies.
 
 The [cache manager][build-cache] bounds intermediate storage under one
 repository cache in the user cache directory. The worker's source, intermediate
 artifacts, and final outputs share that budget with direct Cargo's isolated
 caches. The budget defaults to 20 GiB per pool worker. Active commands protect
-their caches until exit and can temporarily exceed the budget. Set
-`VPDF_BUILD_CACHE_GIB` to override the budget. Worktree removal preserves the
-warm worker caches for reuse.
+their caches until exit and can temporarily exceed the budget. Worker and
+direct Cargo commands measure usage while their task runs and prune idle caches
+when over budget. They skip the scan when the last measurement is under five
+minutes old and below three quarters of the budget; a warm cache scan takes
+seconds on macOS. After the task, the volume's free-space drop is added to the
+recorded usage without refreshing its age. Commands scan again before exiting
+when that estimate passes three quarters of the budget, the scan had to evict,
+or the task outlasted the five minutes. Deletions elsewhere on the volume can
+hide growth until the measurement expires. Set `VPDF_BUILD_CACHE_GIB` to
+override the budget. Worktree removal preserves the warm worker caches for
+reuse.
 
 `mise run cache:prune` prunes to the budget, expires receipts and diagnostics
 after two weeks, and removes caches of deleted repositories.
@@ -792,3 +805,4 @@ a result needs a reproducible release reference.
 [prek-run]: https://prek.j178.dev/running-hooks/
 [demo-media]: demo-media.md
 [demo-host]: https://github.com/letientai299/vpdf/issues/9
+[unification]: https://doc.rust-lang.org/cargo/reference/unstable.html#feature-unification

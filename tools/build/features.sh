@@ -1,6 +1,8 @@
 #!/bin/sh
 # Sourced by both optimized build scripts.
-set -- --no-default-features
+# Shipped binaries keep per-package features.
+export CARGO_RESOLVER_FEATURE_UNIFICATION=selected
+set -- --no-default-features "$@"
 case ${VPDF_BENCH_EVENTS:-0} in
   0|'') ;;
   1) set -- "$@" --features bench-events ;;

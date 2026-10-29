@@ -1,10 +1,11 @@
 import json
+import os
 import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tools.help import assets as help
 
@@ -16,6 +17,7 @@ class HelpAssetTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.output = self.root / "target/help"
         self.facts = {"schema": 1, "topics": [], "defaults": []}
+        self.generation = "a" * 64
         self.inputs = [
             "docs/users/intro.md",
             "docs/users/readme.md",
@@ -32,14 +34,17 @@ class HelpAssetTests(unittest.TestCase):
             "tools/help/markdown.py",
             "tools/help/font.py",
             "crates/ui/assets/VpdfMono.ttf",
+            "Cargo.toml",
+            ".config/mise.toml",
+        ]
+        # Facts carry what these contribute.
+        self.sources = [
             "crates/ui/src/topics.rs",
             "crates/ui/examples/help_metadata.rs",
             "crates/ui/Cargo.toml",
-            "Cargo.toml",
             "Cargo.lock",
-            ".config/mise.toml",
         ]
-        for name in self.inputs:
+        for name in self.inputs + self.sources:
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(name)
@@ -84,12 +89,42 @@ class HelpAssetTests(unittest.TestCase):
                         self.check()
                     self.assertNotEqual(self.prepare(), first)
                     path.write_text(content)
+            for name in self.sources:
+                with self.subTest(name=name):
+                    (self.root / name).write_text("changed")
+                    self.assertEqual(self.check(), first)
+            self.assertEqual(render.call_count, 1 + len(self.inputs))
             added = self.root / "docs/users/new.md"
             added.write_text("new")
             self.assertNotEqual(self.prepare(), first)
             added.unlink()
             self.facts["topics"].append({"id": "new-action"})
             self.assertNotEqual(self.prepare(), first)
+
+    def export_run(self, action):
+        executable = self.root / "help-pdf"
+        executable.write_bytes(b"exporter")
+
+        def invoke(*args, **kwargs):
+            if args[0] == "rustc":
+                return "test-host\n"
+            self.assertEqual(kwargs["cwd"], self.root)
+            if args[0] == "cargo":
+                self.assertEqual(args[1], "build")
+                self.assertEqual(args[args.index("--target") + 1], "test-host")
+                return json.dumps(
+                    {
+                        "reason": "compiler-artifact",
+                        "executable": str(executable),
+                        "target": {"name": "help-pdf"},
+                    }
+                )
+            self.assertEqual(Path(args[0]).name, executable.name)
+            if args[1] == "--fingerprint":
+                return self.generation + "\n"
+            return action(Path(args[1]))
+
+        return invoke
 
     def test_export_replaces_base_symlink(self):
         self.output.mkdir(parents=True)
@@ -98,12 +133,11 @@ class HelpAssetTests(unittest.TestCase):
         pdf = self.output / "help.pdf"
         pdf.symlink_to(base.name)
 
-        def export(*args, **kwargs):
-            self.assertEqual(kwargs["cwd"], self.root)
-            Path(args[-1]).write_bytes(b"readable manual")
+        def export(path):
+            path.write_bytes(b"readable manual")
 
-        with patch.object(help, "run", side_effect=export):
-            help.export_pdf(self.root, self.output)
+        with patch.object(help, "run", side_effect=self.export_run(export)):
+            help.export_pdf(self.root, self.output, self.generation)
         self.assertFalse(pdf.is_symlink())
         self.assertEqual(pdf.read_bytes(), b"readable manual")
         self.assertEqual(base.read_bytes(), b"base")
@@ -113,15 +147,144 @@ class HelpAssetTests(unittest.TestCase):
         pdf = self.output / "help.pdf"
         pdf.write_bytes(b"previous manual")
 
+        def fail(path):
+            path.write_bytes(b"partial export")
+            raise subprocess.CalledProcessError(1, "export")
+
+        with patch.object(help, "run", side_effect=self.export_run(fail)):
+            with self.assertRaises(subprocess.CalledProcessError):
+                help.export_pdf(self.root, self.output, self.generation)
+        self.assertEqual(pdf.read_bytes(), b"previous manual")
+        self.assertEqual(
+            set(self.output.iterdir()), {pdf, self.output / ".export.lock"}
+        )
+
+    def test_export_reuses_verified_pdf(self):
+        self.output.mkdir(parents=True)
+        export = Mock(side_effect=lambda path: path.write_bytes(b"manual"))
+        with patch.object(
+            help, "run", side_effect=self.export_run(export)
+        ) as run:
+            help.export_pdf(self.root, self.output, self.generation)
+            pdf = self.output / "help.pdf"
+            timestamp = pdf.stat().st_mtime_ns
+            help.export_pdf(self.root, self.output, self.generation)
+            self.assertEqual(export.call_count, 1)
+            self.assertEqual(pdf.stat().st_mtime_ns, timestamp)
+            self.assertEqual(
+                sum(call.args[0] == "cargo" for call in run.call_args_list), 2
+            )
+            executable = self.root / "help-pdf"
+            info = executable.stat()
+            executable.write_bytes(b"modified")
+            os.utime(executable, ns=(info.st_atime_ns, info.st_mtime_ns))
+            help.export_pdf(self.root, self.output, self.generation)
+            self.assertEqual(export.call_count, 2)
+            executable.write_bytes(b"exporter")
+            help.export_pdf(self.root, self.output, self.generation)
+            self.assertEqual(export.call_count, 2)
+
+    def test_export_entries_bounded(self):
+        self.output.mkdir(parents=True)
+        export = self.export_run(lambda path: path.write_bytes(b"manual"))
+        executable = self.root / "help-pdf"
+        with patch.object(help, "run", side_effect=export):
+            for index in range(help.EXPORTS + 2):
+                executable.write_bytes(f"exporter {index}".encode())
+                help.export_pdf(self.root, self.output, self.generation)
+        entries = list((self.output / ".exports").iterdir())
+        self.assertEqual(len(entries), help.EXPORTS)
+        latest = help.digest(executable.read_bytes())
+        self.assertIn(self.output / ".exports" / latest, entries)
+
+    def test_export_repairs_cached_output(self):
+        self.output.mkdir(parents=True)
+        export = Mock(side_effect=lambda path: path.write_bytes(b"manual"))
+        with patch.object(help, "run", side_effect=self.export_run(export)):
+            help.export_pdf(self.root, self.output, self.generation)
+            pdf = self.output / "help.pdf"
+            directory = next((self.output / ".exports").iterdir())
+            cached = directory / "help.pdf"
+            receipt = directory / "receipt.json"
+            for change in [
+                pdf.unlink,
+                lambda: pdf.write_bytes(b"broken"),
+            ]:
+                with self.subTest(change=change):
+                    change()
+                    help.export_pdf(self.root, self.output, self.generation)
+                    self.assertEqual(export.call_count, 1)
+                    self.assertEqual(pdf.read_bytes(), b"manual")
+            for change in [
+                cached.unlink,
+                lambda: cached.write_bytes(b"broken"),
+                lambda: receipt.write_text("invalid JSON"),
+                lambda: receipt.write_text("null"),
+            ]:
+                with self.subTest(change=change):
+                    change()
+                    previous = export.call_count
+                    help.export_pdf(self.root, self.output, self.generation)
+                    self.assertEqual(export.call_count, previous + 1)
+                    self.assertEqual(pdf.read_bytes(), b"manual")
+
+    def test_export_build_failure_preserves_manual(self):
+        self.output.mkdir(parents=True)
+        pdf = self.output / "help.pdf"
+        pdf.write_bytes(b"previous manual")
+
         def fail(*args, **kwargs):
-            Path(args[-1]).write_bytes(b"partial export")
+            if args[0] == "rustc":
+                return "test-host\n"
             raise subprocess.CalledProcessError(1, args)
 
         with patch.object(help, "run", side_effect=fail):
             with self.assertRaises(subprocess.CalledProcessError):
-                help.export_pdf(self.root, self.output)
+                help.export_pdf(self.root, self.output, self.generation)
         self.assertEqual(pdf.read_bytes(), b"previous manual")
-        self.assertEqual(list(self.output.iterdir()), [pdf])
+
+    def test_prebuilt_exporter_skips_compilation(self):
+        self.output.mkdir(parents=True)
+        executable = self.root / "prebuilt"
+        executable.write_bytes(b"optimized exporter")
+
+        exports = []
+
+        def export(*args, **kwargs):
+            self.assertEqual(Path(args[0]).name, executable.name)
+            if args[1] == "--fingerprint":
+                return self.generation
+            exports.append(args)
+            Path(args[1]).write_bytes(b"manual")
+
+        with patch.object(help, "run", side_effect=export):
+            help.export_pdf(self.root, self.output, self.generation, executable)
+            help.export_pdf(self.root, self.output, self.generation, executable)
+        self.assertEqual(len(exports), 1)
+
+    def test_prepare_without_export(self):
+        facts = self.root / "facts.json"
+        facts.write_text(json.dumps(self.facts))
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "assets",
+                    "--no-export",
+                    "--facts",
+                    str(facts),
+                    "--output",
+                    str(self.output),
+                ],
+            ),
+            patch.object(help, "ROOT", self.root),
+            patch.object(help, "render", side_effect=self.render),
+            patch.object(help, "export_pdf") as export,
+            patch("builtins.print"),
+        ):
+            help.main()
+        export.assert_not_called()
+        self.assertTrue((self.check() / "base.pdf").is_file())
 
     def test_incomplete_and_corrupt_outputs(self):
         with patch.object(help, "render", side_effect=self.render):
@@ -137,6 +300,27 @@ class HelpAssetTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         self.check()
                     path.write_bytes(original)
+
+    def test_current_generation(self):
+        def render(root, stage, facts):
+            self.render(root, stage, facts)
+            (stage / "facts.json").write_bytes(help.encode(facts))
+
+        with patch.object(help, "render", side_effect=render):
+            directory = self.prepare()
+        self.generation = directory.name
+        export = self.export_run(lambda path: path.write_bytes(b"manual"))
+        with patch.object(help, "run", side_effect=export):
+            help.export_pdf(self.root, self.output, directory.name)
+            with self.assertRaisesRegex(ValueError, "another generation"):
+                help.export_pdf(self.root, self.output, "b" * 64)
+        current = (self.output / ".current").read_text().strip()
+        self.assertEqual(current, directory.name)
+        self.assertEqual(
+            help.generation_facts(self.output, current), self.facts
+        )
+        with self.assertRaisesRegex(ValueError, "Invalid help generation"):
+            help.generation_facts(self.output, "../escape")
 
     def test_failure_preserves_published_assets(self):
         with patch.object(help, "render", side_effect=self.render):

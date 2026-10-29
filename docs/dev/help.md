@@ -25,21 +25,30 @@ On macOS, use `brew install poppler`. The
 native tests check outlines, internal destinations, reference placeholders, and
 extracted text directly from the embedded bytes.
 
-Terminal builds, native app builds, tests, and checks prepare assets before
-compiling. Direct Cargo commands only consume matching prepared assets. When
-assets are missing, stale, incomplete, or corrupt, Cargo fails with
-`mise run help:build`. Run that command after editing manual inputs. Remove a
-corrupt generation directory before rebuilding it; valid generations remain
-immutable.
+The reader's build script computes the help facts and prepares matching assets,
+so Cargo builds generate missing generations themselves. Rust sources affect
+the generation only through those facts: a code change that leaves topics and
+default keys unchanged reuses the existing generation. Incomplete or corrupt
+generations fail the build; remove the generation directory and build again.
+Valid generations remain immutable. Export steps ask the exporter which
+generation it embeds and record it in `target/help/.current` beside the
+exported manual, so packaging and copies reuse the binary's generation without
+recomputing facts.
 
 Outputs live in fingerprint directories under `target/help`, respecting
-`CARGO_TARGET_DIR`. Builds export the readable, composed manual to
+`CARGO_TARGET_DIR`. Mise build tasks export the readable, composed manual to
 `target/help/help.pdf`, including built-in references and resolved links. The
-fingerprinted `base.pdf` contains placeholder colors for runtime composition.
-Use the same `CARGO_TARGET_DIR` for generation and Cargo,
-including when passing Cargo's `--target-dir`. A clean source build generates
-assets. Application execution needs neither source files nor generation tools.
-`--version` verifies the bundled hashes and reports their shared identity.
+export cache keeps a verified PDF for each of the four most recent exporter
+hashes, so switching profiles reuses those entries. Reader builds compile the
+exporter alongside the frontend in the same Cargo invocation and profile;
+standalone help builds check the host exporter before each lookup. Changed
+inputs rebuild it. Missing or corrupt cache entries regenerate; failed exports
+leave the previous PDF intact. The fingerprinted `base.pdf` contains placeholder
+colors for runtime composition. Use the same `CARGO_TARGET_DIR` for generation
+and Cargo, including when passing Cargo's `--target-dir`. A clean source build
+generates assets. Application execution needs neither source files nor
+generation tools. `--version` verifies the bundled hashes and reports their
+shared identity.
 
 ## Delivery checks
 

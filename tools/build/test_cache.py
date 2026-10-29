@@ -11,7 +11,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tools.build import cache as build_cache
 from tools.build import cleanup
@@ -62,6 +62,46 @@ class CacheTests(unittest.TestCase):
         build_cache.prune(self.build, 1024**2)
         self.assertTrue(artifact.exists())
 
+    def test_recorded_usage_skips_scan(self):
+        artifact = self.artifact()
+        build_cache.prune(self.build, 1024**2)
+        record = self.build.parent / "usage"
+        self.assertEqual(
+            int(record.read_text()), build_cache.cache_bytes(self.build)
+        )
+        stale = time.time() - build_cache.USAGE_SECONDS - 1
+        for content, limit, age, scanned in [
+            ("7000", 10000, None, False),
+            ("8000", 10000, None, True),
+            ("7000", 10000, stale, True),
+            ("invalid", 1024**2, None, True),
+            (None, 1024**2, None, True),
+            ("16384", 8192, None, True),
+        ]:
+            with self.subTest(content=content, limit=limit, age=age):
+                if content is None:
+                    record.unlink()
+                else:
+                    record.write_text(content)
+                    if age:
+                        os.utime(record, (age, age))
+                with patch.object(
+                    build_cache, "cache_bytes", return_value=0
+                ) as scan:
+                    build_cache.prune_recorded(self.build, limit)
+                self.assertEqual(scan.called, scanned)
+                self.assertTrue(artifact.exists())
+        record.write_text("16384")
+        build_cache.prune_recorded(self.build, 1)
+        self.assertFalse(artifact.exists())
+        self.assertEqual(
+            int(record.read_text()), build_cache.cache_bytes(self.build)
+        )
+        self.assertEqual(
+            sorted(path.name for path in self.build.parent.iterdir()),
+            ["build", "usage"],
+        )
+
     def test_prune_tolerates_cleaned_namespace(self):
         folder = self.build / "removed"
         folder.mkdir(parents=True)
@@ -87,7 +127,6 @@ class CacheTests(unittest.TestCase):
         self.env["VPDF_BUILD_CACHE_GIB"] = "0.000000001"
 
         def compile_artifact(*args, env, **kwargs):
-            self.assertFalse((self.build / "artifact").exists())
             self.assertEqual(
                 Path(env["CARGO_BUILD_BUILD_DIR"]).parent, self.build
             )
@@ -103,6 +142,44 @@ class CacheTests(unittest.TestCase):
             self.artifact()
             self.assertEqual(build_cache.run(["build"]), 7)
         self.assertFalse(list(self.build.iterdir()))
+
+    def test_budget_accounts_for_growth(self):
+        gib = 1024**3
+        cache = self.build.parent
+        (cache / "leases").mkdir(parents=True)
+        record = cache / "usage"
+        measured = time.time() - 60
+        for usage, freed, grown, window, rescanned in [
+            (gib, 0, gib // 2, 300, False),
+            (gib, 0, 3 * gib, 300, True),
+            (gib, gib, 0, 300, True),
+            (gib, 0, 0, -1, True),
+            (None, 0, 0, 300, True),
+        ]:
+            with self.subTest(usage=usage, freed=freed, grown=grown):
+                record.unlink(missing_ok=True)
+                if usage is not None:
+                    record.write_text(f"{usage}\n")
+                    os.utime(record, (measured, measured))
+                free = [Mock(free=10 * gib), Mock(free=10 * gib - grown)]
+                with (
+                    patch("shutil.disk_usage", side_effect=free),
+                    patch.object(
+                        build_cache, "prune_recorded", return_value=freed
+                    ),
+                    patch.object(build_cache, "prune", return_value=0) as prune,
+                    patch.object(build_cache, "USAGE_SECONDS", window),
+                    build_cache.budget(
+                        cache, 4 * gib, cache / "leases"
+                    ) as scan,
+                ):
+                    scan()
+                self.assertEqual(prune.called, rescanned)
+                if not rescanned:
+                    self.assertEqual(
+                        int(record.read_text()), usage + grown + freed
+                    )
+                    self.assertEqual(record.stat().st_mtime, measured)
 
     def test_oldest_namespace_evicted(self):
         for index, name in enumerate(["old", "warm", "active"]):
@@ -275,6 +352,8 @@ class CacheTests(unittest.TestCase):
             with self.assertRaises(ProcessLookupError):
                 os.kill(int((self.root / "pid").read_text()), 0)
             reaped = True
+            # Cancellation releases the lease for later pruning.
+            build_cache.prune(self.build, 1, self.build.parent / "leases")
             self.assertFalse(list(self.build.iterdir()))
         finally:
             if wrapper.poll() is None:
@@ -310,6 +389,7 @@ class CacheTests(unittest.TestCase):
             (self.root / "release").touch()
             self.assertEqual(first.wait(timeout=10), 0)
             self.assertTrue((self.root / "second").exists())
+            build_cache.prune(self.build, 1, self.build.parent / "leases")
             self.assertFalse(list(self.build.iterdir()))
         finally:
             for process in [first, second]:

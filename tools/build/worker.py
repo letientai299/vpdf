@@ -16,6 +16,7 @@ from pathlib import Path
 from tools.build.cache import (
     WORKER_JOBS,
     WORKER_PROTOCOL,
+    budget,
     cache_key,
     cache_limit,
     cache_root,
@@ -24,7 +25,6 @@ from tools.build.cache import (
     locked,
     mark_origin,
     pool_size,
-    prune,
 )
 
 
@@ -267,59 +267,59 @@ def worker_snapshot(root, files, env=None, revision=None, scope="snapshot"):
         revision = head.stdout.strip() if head.returncode == 0 else ""
     queued = time.monotonic()
     print(f"Worker capture: {queued - capture:.3f}s", flush=True)
-    try:
-        with worker_lease(cache, root, count) as (name, lease, resources):
-            worker = build / name
-            source = worker / "source"
-            acquired = time.monotonic()
-            print(f"Worker selected: {request} worker={name}", flush=True)
-            print(f"Worker queue: {acquired - queued:.3f}s", flush=True)
-            with locked(cache / "lock"):
-                prune(build, limit, leases)
-            pruned = time.monotonic()
-            print(f"Worker prune: {pruned - acquired:.3f}s", flush=True)
-            worker.mkdir(parents=True, exist_ok=True)
+    with (
+        budget(
+            cache,
+            limit,
+            leases,
+            log=lambda line: print(f"Worker {line}", flush=True),
+        ) as scan,
+        worker_lease(cache, root, count) as (name, lease, resources),
+    ):
+        worker = build / name
+        source = worker / "source"
+        acquired = time.monotonic()
+        print(f"Worker selected: {request} worker={name}", flush=True)
+        print(f"Worker queue: {acquired - queued:.3f}s", flush=True)
+        scan()
+        pruned = time.monotonic()
+        worker.mkdir(parents=True, exist_ok=True)
+        os.utime(worker, None)
+        sync_files(source, captured)
+        synced = time.monotonic()
+        print(f"Worker files: {synced - pruned:.3f}s", flush=True)
+        snapshot_git(root, source, revision, lease.fileno())
+        metadata = time.monotonic()
+        print(f"Worker git: {metadata - synced:.3f}s", flush=True)
+        env.update(
+            CARGO_BUILD_BUILD_DIR=str(worker / "intermediates"),
+            CARGO_TARGET_DIR=str(worker / "target"),
+            VPDF_BUILD_CACHE_ID=cache.name,
+            VPDF_BUILD_WORKER=str(source),
+            VPDF_BUILD_WORKER_FD=str(lease.fileno()),
+            VPDF_BUILD_RESOURCE_FDS=",".join(
+                f"{slot}:{stream.fileno()}" for slot, stream in resources
+            ),
+            VPDF_BUILD_REQUEST_ID=request,
+            VPDF_BUILD_ORIGIN=hashlib.sha256(os.fsencode(root)).hexdigest(),
+            MISE_TRUSTED_CONFIG_PATHS=str(source),
+            PYTHONDONTWRITEBYTECODE="1",
+        )
+        env["PATH"] = (
+            str(source / "tools/shims/native") + os.pathsep + env["PATH"]
+        )
+        if env.get("VPDF_CORPUS") == str(root / "tmp/corpus"):
+            env["VPDF_CORPUS"] = str(source / "tmp/corpus")
+        # Reuse corpus inputs without copying PDFs.
+        (root / "tmp").mkdir(exist_ok=True)
+        (source / "tmp").symlink_to(root / "tmp", target_is_directory=True)
+        ready = time.monotonic()
+        print(f"Worker sync: {ready - acquired:.3f}s", flush=True)
+        try:
+            yield source, env
+        finally:
+            print(f"Worker task: {time.monotonic() - ready:.3f}s", flush=True)
             os.utime(worker, None)
-            sync_files(source, captured)
-            synced = time.monotonic()
-            print(f"Worker files: {synced - pruned:.3f}s", flush=True)
-            snapshot_git(root, source, revision, lease.fileno())
-            metadata = time.monotonic()
-            print(f"Worker git: {metadata - synced:.3f}s", flush=True)
-            env.update(
-                CARGO_BUILD_BUILD_DIR=str(worker / "intermediates"),
-                CARGO_TARGET_DIR=str(worker / "target"),
-                VPDF_BUILD_CACHE_ID=cache.name,
-                VPDF_BUILD_WORKER=str(source),
-                VPDF_BUILD_WORKER_FD=str(lease.fileno()),
-                VPDF_BUILD_RESOURCE_FDS=",".join(
-                    f"{slot}:{stream.fileno()}" for slot, stream in resources
-                ),
-                VPDF_BUILD_REQUEST_ID=request,
-                VPDF_BUILD_ORIGIN=hashlib.sha256(os.fsencode(root)).hexdigest(),
-                MISE_TRUSTED_CONFIG_PATHS=str(source),
-                PYTHONDONTWRITEBYTECODE="1",
-            )
-            env["PATH"] = (
-                str(source / "tools/shims/native") + os.pathsep + env["PATH"]
-            )
-            if env.get("VPDF_CORPUS") == str(root / "tmp/corpus"):
-                env["VPDF_CORPUS"] = str(source / "tmp/corpus")
-            # Reuse corpus inputs without copying PDFs.
-            (root / "tmp").mkdir(exist_ok=True)
-            (source / "tmp").symlink_to(root / "tmp", target_is_directory=True)
-            ready = time.monotonic()
-            print(f"Worker sync: {ready - acquired:.3f}s", flush=True)
-            try:
-                yield source, env
-            finally:
-                print(
-                    f"Worker task: {time.monotonic() - ready:.3f}s", flush=True
-                )
-                os.utime(worker, None)
-    finally:
-        with locked(cache / "lock"):
-            prune(build, limit, leases)
 
 
 def copy_binary(source, destination):
@@ -407,18 +407,45 @@ def copy_help(output, target, env):
 
     directory = Path(
         subprocess.check_output(
-            [sys.executable, "-B", "-m", "tools.help.assets", "--check"],
+            [
+                sys.executable,
+                "-B",
+                "-m",
+                "tools.help.assets",
+                "--check",
+                "--current",
+            ],
             cwd=target.parent / "source",
             env=env,
             pass_fds=(int(env["VPDF_BUILD_WORKER_FD"]),),
             text=True,
         ).strip()
     )
-    destination = output / "help" / directory.name
-    destination.mkdir(parents=True, exist_ok=True)
-    for name in (*OUTPUTS, "manifest.json"):
-        copy_binary(directory / name, destination / name)
-    copy_binary(target / "help/help.pdf", output / "help/help.pdf")
+    names = (*OUTPUTS, "manifest.json")
+    help_dir = output / "help"
+    destination = help_dir / directory.name
+    help_dir.mkdir(parents=True, exist_ok=True)
+    # Direct builds in the worktree read generations under this lock.
+    with locked(help_dir / ".lock"):
+        if not all(
+            (destination / name).is_file()
+            and (destination / name).read_bytes()
+            == (directory / name).read_bytes()
+            for name in names
+        ):
+            with tempfile.TemporaryDirectory(
+                prefix=".copy-", dir=help_dir
+            ) as temporary:
+                stage = Path(temporary) / directory.name
+                stage.mkdir()
+                for name in names:
+                    copy_binary(directory / name, stage / name)
+                shutil.rmtree(destination, ignore_errors=True)
+                stage.rename(destination)
+        copy_binary(target / "help/help.pdf", help_dir / "help.pdf")
+        replace_file(
+            help_dir / ".current", f"{directory.name}\n".encode(), 0o644
+        )
 
 
 def run(args):

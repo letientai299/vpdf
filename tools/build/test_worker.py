@@ -494,6 +494,19 @@ class WorkerTests(unittest.TestCase):
                 {path.name for path in destination.iterdir()},
                 {*OUTPUTS, "manifest.json"},
             )
+            current = self.repo / "target/help/.current"
+            self.assertEqual(current.read_text(), "generation\n")
+            self.assertEqual(
+                [p.name for p in destination.parent.glob(".copy-*")], []
+            )
+        (destination / "base.pdf").write_text("partial")
+        with patch.object(
+            subprocess, "check_output", return_value=str(generation)
+        ):
+            build_worker.copy_help(
+                self.repo / "target", target, {"VPDF_BUILD_WORKER_FD": "3"}
+            )
+        self.assertEqual((destination / "base.pdf").read_text(), "asset")
         for name in ["release/vpdf", "dist/vpdf"]:
             self.assertEqual((self.repo / "target" / name).read_text(), name)
 
@@ -541,6 +554,17 @@ class WorkerTests(unittest.TestCase):
                 },
             )
         self.assertEqual(output.read_text(), "previous")
+
+    def test_scan_errors_keep_task_errors(self):
+        with patch.object(
+            build_cache, "cache_bytes", side_effect=ValueError("symlink")
+        ):
+            with self.assertRaisesRegex(ValueError, "symlink"):
+                with self.snapshot():
+                    pass
+            with self.assertRaisesRegex(RuntimeError, "task failed"):
+                with self.snapshot():
+                    raise RuntimeError("task failed")
 
     def test_limit_overrides(self):
         with (

@@ -1,5 +1,6 @@
 """Bound isolated worktree caches with one budget."""
 
+import concurrent.futures
 import contextlib
 import fcntl
 import hashlib
@@ -8,6 +9,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 DEFAULT_GIB = 20
@@ -16,6 +18,9 @@ MAX_WORKERS = 8
 DEFAULT_WORKERS = 4
 # Per worker; also caps MuPDF's Make.
 WORKER_JOBS = 16
+# Recent measurements with headroom skip rescans.
+USAGE_SECONDS = 300
+USAGE_SHARE = 0.75
 SHIMS = Path(__file__).resolve().parents[1] / "shims"
 
 
@@ -75,8 +80,12 @@ def cache_bytes(path):
         raise ValueError("Build cache directory is a symlink")
     if not path.exists():
         return 0
+    # Its own session keeps Ctrl-C for the task.
     result = subprocess.run(
-        ["du", "-sk", str(path)], capture_output=True, text=True
+        ["du", "-sk", str(path)],
+        capture_output=True,
+        text=True,
+        start_new_session=True,
     )
     # Active compilers rename files during scans.
     if not result.stdout:
@@ -93,9 +102,114 @@ def locked(path, mode=fcntl.LOCK_EX):
         yield lock
 
 
+def usage_record(path):
+    return path.parent / "usage"
+
+
+def read_usage(record):
+    try:
+        return int(record.read_text()), record.stat().st_mtime
+    except (OSError, ValueError):
+        return None
+
+
+def write_usage(record, size, measured=None):
+    staged = record.with_name(f".usage.{os.getpid()}")
+    # The record only skips scans; never fail builds.
+    with contextlib.suppress(OSError):
+        try:
+            staged.write_text(f"{size}\n")
+            if measured is not None:
+                os.utime(staged, (measured, measured))
+            os.replace(staged, record)
+        finally:
+            staged.unlink(missing_ok=True)
+
+
 def prune(path, limit, leases=None):
-    if cache_bytes(path) <= limit:
-        return
+    measured = size = cache_bytes(path)
+    if size > limit:
+        size = evict(path, size, limit, leases)
+    write_usage(usage_record(path), size)
+    return measured - size
+
+
+def prune_recorded(path, limit, leases=None):
+    usage = read_usage(usage_record(path))
+    if (
+        usage
+        and 0 <= time.time() - usage[1] < USAGE_SECONDS
+        and usage[0] <= limit * USAGE_SHARE
+    ):
+        return 0
+    return prune(path, limit, leases)
+
+
+def add_growth(grown):
+    def check(path, limit, leases):
+        # Estimates keep the last measurement's age.
+        record = usage_record(path)
+        usage = read_usage(record)
+        if usage is None or usage[0] + grown > limit * USAGE_SHARE:
+            return prune(path, limit, leases)
+        write_usage(record, usage[0] + grown, usage[1])
+        return 0
+
+    return check
+
+
+def locked_prune(cache, limit, leases, check):
+    start = time.monotonic()
+    with locked(cache / "lock"):
+        freed = check(cache / "build", limit, leases)
+    return freed, time.monotonic() - start
+
+
+@contextlib.contextmanager
+def budget(cache, limit, leases, log=None):
+    """Yield a scan starter; account for the task's growth after."""
+    free = shutil.disk_usage(cache).free
+    start = time.monotonic()
+    failed = False
+    with concurrent.futures.ThreadPoolExecutor(1) as pool:
+        scans = []
+
+        def begin():
+            # Callers start it once their lease protects them.
+            scans.append(
+                pool.submit(locked_prune, cache, limit, leases, prune_recorded)
+            )
+
+        try:
+            yield begin
+        except BaseException:
+            failed = True
+            raise
+        finally:
+            try:
+                freed = 0
+                for scan in scans:
+                    freed, elapsed = scan.result()
+                    if log:
+                        log(f"scan: {elapsed:.3f}s")
+                # Volume growth, including other processes' writes.
+                grown = max(0, free + freed - shutil.disk_usage(cache).free)
+                stale = freed or time.monotonic() - start > USAGE_SECONDS
+                check = prune if stale else add_growth(grown)
+                _, elapsed = locked_prune(cache, limit, leases, check)
+                if log:
+                    log(f"settle: {elapsed:.3f}s")
+            except (
+                OSError,
+                ValueError,
+                subprocess.CalledProcessError,
+            ) as error:
+                if not failed:
+                    raise
+                print(f"Build cache scan failed: {error}", file=sys.stderr)
+
+
+def evict(path, size, limit, leases):
     print(
         "Vpdf build cache exceeded budget; pruning intermediates",
         file=sys.stderr,
@@ -125,8 +239,10 @@ def prune(path, limit, leases=None):
                 shutil.rmtree(entry)
             else:
                 entry.unlink()
-        if cache_bytes(path) <= limit:
+        size = cache_bytes(path)
+        if size <= limit:
             break
+    return size
 
 
 def source_root(args):
@@ -238,24 +354,20 @@ def run(args):
     mark_origin(root, source)
     leases = root / "leases"
     leases.mkdir(exist_ok=True)
-    try:
-        with locked(leases / namespace, fcntl.LOCK_SH) as lease:
-            with locked(root / "lock"):
-                prune(build, limit, leases)
-            intermediates.mkdir(parents=True, exist_ok=True)
-            os.utime(intermediates, None)
+    with (
+        budget(root, limit, leases) as scan,
+        locked(leases / namespace, fcntl.LOCK_SH) as lease,
+    ):
+        scan()
+        intermediates.mkdir(parents=True, exist_ok=True)
+        os.utime(intermediates, None)
+        try:
+            return invoke([cargo, *args], env=env, pass_fds=(lease.fileno(),))
+        finally:
             try:
-                return invoke(
-                    [cargo, *args], env=env, pass_fds=(lease.fileno(),)
-                )
-            finally:
-                try:
-                    os.utime(intermediates, None)
-                except FileNotFoundError:
-                    pass
-    finally:
-        with locked(root / "lock"):
-            prune(build, limit, leases)
+                os.utime(intermediates, None)
+            except FileNotFoundError:
+                pass
 
 
 def main():

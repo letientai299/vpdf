@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 build_dir="${CARGO_TARGET_DIR:-target}"
-help_assets=$(python3 -B -m tools.help.assets --check)
+help_assets=$(python3 -B -m tools.help.assets --check --current)
 fingerprint=$(basename "$help_assets")
 "$build_dir/release/vpdf" --version | grep -Fx "Help assets: $fingerprint"
 release_dir="$build_dir/dist"

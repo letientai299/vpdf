@@ -26,13 +26,11 @@ INPUTS = (
     "crates/ui/assets",
     "tools/help/markdown.py",
     "tools/help/font.py",
-    "crates/ui/src",
-    "crates/ui/examples/help_metadata.rs",
-    "crates/ui/Cargo.toml",
+    # Facts carry what Rust sources contribute.
     "Cargo.toml",
-    "Cargo.lock",
     ".config/mise.toml",
 )
+EXPORTS = 4
 OUTPUTS = ("base.pdf", "topics.json", "facts.json", "third-party-notices.txt")
 
 
@@ -269,25 +267,104 @@ def check_assets(root, output, facts):
     return directory
 
 
-def export_pdf(root, output):
-    with tempfile.TemporaryDirectory(
-        prefix=".export-", dir=output
-    ) as temporary:
-        pdf = Path(temporary) / "help.pdf"
-        run(
-            "cargo",
-            "run",
-            "--locked",
-            "-p",
-            "vpdf-dev",
-            "--bin",
-            "help-pdf",
-            "--",
-            str(pdf),
-            cwd=root,
-            timeout=600,
+def build_exporter(root):
+    host = run("rustc", "--print", "host-tuple").strip()
+    records = run(
+        "cargo",
+        "build",
+        "--locked",
+        "-p",
+        "vpdf-dev",
+        "--bin",
+        "help-pdf",
+        "--target",
+        host,
+        "--message-format=json-render-diagnostics",
+        cwd=root,
+        timeout=600,
+    )
+    executable = next(
+        (
+            Path(record["executable"])
+            for line in records.splitlines()
+            if (record := json.loads(line)).get("reason") == "compiler-artifact"
+            and record.get("executable")
+            and record["target"]["name"] == "help-pdf"
+        ),
+        None,
+    )
+    if executable is None:
+        raise ValueError("Help exporter executable missing")
+    return executable
+
+
+def cached_export(directory, identity):
+    pdf = directory / "help.pdf"
+    try:
+        expected = {"executable": identity, "pdf": digest(pdf.read_bytes())}
+        if (
+            not pdf.is_symlink()
+            and json.loads((directory / "receipt.json").read_bytes())
+            == expected
+        ):
+            return expected["pdf"]
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def export_pdf(root, output, generation, executable=None):
+    executable = executable or build_exporter(root)
+    with (output / ".export.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        with tempfile.TemporaryDirectory(
+            prefix=".export-", dir=output
+        ) as temporary:
+            # Concurrent Cargo runs may replace the original.
+            copy = Path(temporary) / executable.name
+            shutil.copy2(executable, copy)
+            if run(str(copy), "--fingerprint", cwd=root).strip() != generation:
+                raise ValueError("Help exporter embeds another generation")
+            with copy.open("rb") as stream:
+                identity = hashlib.file_digest(stream, "sha256").hexdigest()
+            publish_pdf(root, output, copy, identity, Path(temporary))
+        staged = output / ".current.tmp"
+        staged.write_text(generation + "\n")
+        staged.replace(output / ".current")
+
+
+def publish_pdf(root, output, executable, identity, temporary):
+    pdf = output / "help.pdf"
+    exports = output / ".exports"
+    directory = exports / identity
+    cached = directory / "help.pdf"
+    checksum = cached_export(directory, identity)
+    try:
+        if not pdf.is_symlink() and digest(pdf.read_bytes()) == checksum:
+            return
+    except OSError:
+        pass
+    staged = temporary / "help.pdf"
+    if checksum:
+        shutil.copyfile(cached, staged)
+    else:
+        run(str(executable), str(staged), cwd=root, timeout=600)
+        record = temporary / "receipt.json"
+        record.write_bytes(
+            encode({"executable": identity, "pdf": digest(staged.read_bytes())})
         )
-        pdf.replace(output / "help.pdf")
+        directory.mkdir(parents=True, exist_ok=True)
+        copy = temporary / "cached.pdf"
+        shutil.copyfile(staged, copy)
+        copy.replace(cached)
+        record.replace(directory / "receipt.json")
+        # Each Rust change adds an exporter hash.
+        for old in sorted(
+            (entry for entry in exports.iterdir() if entry != directory),
+            key=lambda entry: entry.stat().st_mtime_ns,
+        )[: -(EXPORTS - 1)]:
+            shutil.rmtree(old)
+    staged.replace(pdf)
 
 
 def prepare(root, output, facts):
@@ -297,26 +374,35 @@ def prepare(root, output, facts):
         directory, expected = generation(root, output, facts)
         if directory.exists():
             directory = check_assets(root, output, facts)
-            return directory
-        with tempfile.TemporaryDirectory(
-            prefix=".generate-", dir=output
-        ) as temporary:
-            stage = Path(temporary)
-            render(root, stage, facts)
-            if identity(root, facts) != expected:
-                raise ValueError("Help inputs changed during generation")
-            manifest = {
-                "identity": expected,
-                "fingerprint": directory.name,
-                "outputs": {
-                    name: digest((stage / name).read_bytes())
-                    for name in OUTPUTS
-                },
-            }
-            (stage / "manifest.json").write_bytes(encode(manifest))
-            verify(stage, expected)
-            os.rename(stage, directory)
+        else:
+            generate(root, directory, expected, facts)
     return directory
+
+
+def generate(root, directory, expected, facts):
+    with tempfile.TemporaryDirectory(
+        prefix=".generate-", dir=directory.parent
+    ) as temporary:
+        stage = Path(temporary)
+        render(root, stage, facts)
+        if identity(root, facts) != expected:
+            raise ValueError("Help inputs changed during generation")
+        manifest = {
+            "identity": expected,
+            "fingerprint": directory.name,
+            "outputs": {
+                name: digest((stage / name).read_bytes()) for name in OUTPUTS
+            },
+        }
+        (stage / "manifest.json").write_bytes(encode(manifest))
+        verify(stage, expected)
+        os.rename(stage, directory)
+
+
+def generation_facts(output, name):
+    if len(name) != 64 or any(c not in "0123456789abcdef" for c in name):
+        raise ValueError("Invalid help generation")
+    return json.loads((output / name / "facts.json").read_bytes())
 
 
 def check_pdf(directory):
@@ -347,23 +433,35 @@ def check_pdf(directory):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
-    parser.add_argument("--facts", type=Path)
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--facts", type=Path)
+    source.add_argument("--current", action="store_true")
     parser.add_argument("--verify-pdf", action="store_true")
     parser.add_argument("--output", type=Path)
+    export = parser.add_mutually_exclusive_group()
+    export.add_argument("--no-export", action="store_true")
+    export.add_argument("--exporter", type=Path)
     args = parser.parse_args()
-    facts = (
-        json.loads(args.facts.read_bytes())
-        if args.facts
-        else export_facts(ROOT)
-    )
     output = (
         args.output
         or Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target")) / "help"
     )
+    output = output.resolve()
+    if args.facts:
+        facts = json.loads(args.facts.read_bytes())
+    elif args.current:
+        # The generation of the last exported manual.
+        name = (output / ".current").read_text().strip()
+        facts = generation_facts(output, name)
+    elif args.exporter:
+        name = run(str(args.exporter), "--fingerprint", cwd=ROOT).strip()
+        facts = generation_facts(output, name)
+    else:
+        facts = export_facts(ROOT)
     action = check_assets if args.check else prepare
-    directory = action(ROOT, output.resolve(), facts)
-    if not args.check:
-        export_pdf(ROOT, output.resolve())
+    directory = action(ROOT, output, facts)
+    if not args.check and not args.no_export:
+        export_pdf(ROOT, output, directory.name, args.exporter)
     if args.verify_pdf:
         check_pdf(directory)
     print(directory)

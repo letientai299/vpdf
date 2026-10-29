@@ -1,5 +1,6 @@
 """Resolve reader links in Pandoc's GFM tree."""
 
+import functools
 import hashlib
 import json
 import re
@@ -10,6 +11,8 @@ import urllib.parse
 MEDIA = ("docs/users", "docs/assets")
 
 
+# Chapters re-parse linked chapters per link.
+@functools.cache
 def pandoc(source, reader, writer):
     result = subprocess.run(
         [

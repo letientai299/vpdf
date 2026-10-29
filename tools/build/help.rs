@@ -15,10 +15,10 @@ pub fn prepare() {
   println!("cargo::rerun-if-changed=LICENSE");
   println!("cargo::rerun-if-changed=LICENSE-AGPL");
   let result = Command::new("python3")
-    .args(["-B", "-m", "tools.help.assets", "--check", "--facts"])
+    .args(["-B", "-m", "tools.help.assets", "--no-export", "--facts"])
     .arg(facts)
     .output()
-    .expect("Help verification needs Python 3; run mise run help:build");
+    .expect("Help generation needs Python 3; run mise install");
   assert!(
     result.status.success(),
     "{}",

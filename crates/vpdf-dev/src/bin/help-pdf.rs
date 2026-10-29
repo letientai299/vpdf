@@ -8,6 +8,11 @@ use vpdf_ui::topics::{Invocation, TopicId};
 
 fn main() -> Result<()> {
   let destination = std::env::args_os().nth(1).context("Missing output PDF")?;
+  // Names the embedded help generation for export tooling.
+  if destination == "--fingerprint" {
+    println!("{}", vpdf::manual::identity());
+    return Ok(());
+  }
   let reference = Settings::default().help_reference(Invocation::Home);
   let (send, receive) = mpsc::channel();
   let wake = Wake::new(move || {

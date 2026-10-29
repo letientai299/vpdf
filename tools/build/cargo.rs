@@ -49,7 +49,8 @@ fn version() -> Option<String> {
 }
 
 fn main() {
-  help::prepare();
+  // Overlaps help facts with the Git queries below.
+  let assets = std::thread::spawn(help::prepare);
   let version =
     version().unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_owned());
   println!("cargo::rustc-env=VPDF_VERSION={version}");
@@ -70,5 +71,8 @@ fn main() {
       "cargo::rustc-env=VPDF_SOURCE_{key}={}",
       value.unwrap_or("unknown")
     );
+  }
+  if let Err(panic) = assets.join() {
+    std::panic::resume_unwind(panic);
   }
 }

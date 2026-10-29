@@ -19,6 +19,10 @@ ocr_tests = "test(real_ocr_and_cancel) | test(real_ocr_cache_policy)"
 _.path = ["{{config_root}}/tools/shims"]
 # Lets check and build share MuPDF.
 CARGO_BUILD_TARGET = "{{ arch(x64='x86_64', arm64='aarch64') }}-{{ os(macos='apple-darwin', linux='unknown-linux-gnu') }}"
+# Frontends, tests, and the help exporter share dependency builds;
+# features.sh restores per-package features for shipped binaries.
+CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
+CARGO_RESOLVER_FEATURE_UNIFICATION = "workspace"
 # Corpus tests and benches; `corpus:huge` fills tmp/huge for ad hoc runs.
 VPDF_CORPUS = "{{config_root}}/tmp/corpus"
 
@@ -49,8 +53,7 @@ run = "python3 -B -m tools.build.worker build:gui"
 
 [tasks."_build:gui"]
 hide = true
-depends = ["help:build"]
-run = "cargo build --locked -p vpdf-gui"
+run = "sh tools/build/debug.sh vpdf-gui"
 
 [tasks."build:debug"]
 description = "Build the debug reader"
@@ -58,8 +61,7 @@ run = "python3 -B -m tools.build.worker build:debug"
 
 [tasks."_build:debug"]
 hide = true
-depends = ["help:build"]
-run = "cargo build --locked -p vpdf"
+run = "sh tools/build/debug.sh vpdf"
 
 [tasks."build"]
 description = "Build the optimized reader"

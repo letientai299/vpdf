@@ -5,12 +5,14 @@ if [ "$(uname -s)" != Darwin ]; then
   exit 1
 fi
 build_dir="${CARGO_TARGET_DIR:-target}"
-help_assets=$(python3 -B -m tools.help.assets)
 target=$(rustc --print host-tuple)
 . tools/build/features.sh
-cargo build --profile app --locked -p vpdf-gui --target "$target" "$@"
+cargo build --profile app --locked -p vpdf-gui -p vpdf-dev \
+  --bin vpdf-gui --bin help-pdf --target "$target" "$@"
 binary="$build_dir/$target/app/vpdf-gui"
 sh tools/package/check-macos.sh "$binary"
+help_assets=$(python3 -B -m tools.help.assets \
+  --exporter "$build_dir/$target/app/help-pdf")
 release_dir="$build_dir/dist"
 mkdir -p "$release_dir"
 staged=$(mktemp -d "$release_dir/.app.XXXXXX")
