@@ -20,10 +20,12 @@ class MergeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             log = root / "log"
+            release = root / "release"
             wt = root / "bin/wt"
             wt.parent.mkdir()
             wt.write_text(
-                f"#!/bin/sh\necho start >> '{log}'\nsleep 0.3\n"
+                f"#!/bin/sh\necho start >> '{log}'\n"
+                f"while [ ! -f '{release}' ]; do sleep 0.01; done\n"
                 f"echo \"end $*\" >> '{log}'\n"
             )
             wt.chmod(0o755)
@@ -39,26 +41,42 @@ class MergeTests(unittest.TestCase):
             command = [sys.executable, "-B", "-m", "tools.check.merge", "-y"]
             project = Path(hooks.__file__).resolve().parents[2]
             first = subprocess.Popen(command, cwd=project, env=env)
+            second = None
             try:
                 deadline = time.monotonic() + 10
                 while not log.exists():
                     self.assertLess(time.monotonic(), deadline)
                     time.sleep(0.01)
-                second = subprocess.run(
+                second = subprocess.Popen(
                     command,
                     cwd=project,
                     env=env,
-                    capture_output=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     text=True,
-                    timeout=10,
                 )
+                waiting = threading.Event()
+                output = []
+
+                def read_waiting():
+                    output.append(second.stdout.readline())
+                    waiting.set()
+
+                reader = threading.Thread(target=read_waiting, daemon=True)
+                reader.start()
+                self.assertTrue(waiting.wait(10), "Merge did not wait")
+                self.assertEqual(output, ["Waiting for another merge\n"])
+                release.touch()
+                stdout, stderr = second.communicate(timeout=10)
+                reader.join(timeout=10)
+                self.assertEqual(second.returncode, 0, stdout + stderr)
                 self.assertEqual(first.wait(timeout=10), 0)
             finally:
-                if first.poll() is None:
-                    first.kill()
-                    first.wait()
-            self.assertEqual(second.returncode, 0)
-            self.assertIn("Waiting for another merge", second.stdout)
+                release.touch()
+                for process in (first, second):
+                    if process is not None and process.poll() is None:
+                        process.kill()
+                        process.wait()
             self.assertEqual(
                 log.read_text().splitlines(),
                 ["start", "end merge -y", "start", "end merge -y"],
