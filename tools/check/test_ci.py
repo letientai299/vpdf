@@ -164,6 +164,8 @@ class ArchiveTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.env = dict(os.environ)
+        self.env.pop("GITHUB_REF_TYPE", None)
+        self.env.pop("GITHUB_REF_NAME", None)
         self.env["CARGO_TARGET_DIR"] = str(self.root / "custom-target")
         self.binary = self.root / "custom-target/dist/vpdf"
         self.binary.parent.mkdir(parents=True)
@@ -184,6 +186,23 @@ class ArchiveTests(unittest.TestCase):
                 packed.extractfile("vpdf").read(), self.binary.read_bytes()
             )
         ci.verify_archive(self.archive, self.digest, self.root, self.env)
+
+    def test_tagged_version(self):
+        (self.root / "Cargo.toml").write_text(
+            '[package]\nversion = "0.1.0"\nrepository = "https://example.com/vpdf"\n'
+        )
+        (self.root / "changelogs").mkdir()
+        (self.root / "changelogs/v0.1.0.md").write_text(
+            "# Vpdf v0.1.0\n\nFeatures\n"
+        )
+        self.env.update(GITHUB_REF_TYPE="tag", GITHUB_REF_NAME="v0.1.0")
+        with self.assertRaisesRegex(ValueError, "Packaged version"):
+            ci.archive(self.root, self.env)
+        output = "vpdf 0.1.0\n\n# Vpdf v0.1.0\n\nFeatures\n\nhttps://example.com/vpdf\n"
+        self.binary.write_text(
+            "#!/bin/sh\ncat <<'NOTES'\n" + output + "NOTES\n"
+        )
+        ci.archive(self.root, self.env)
 
     def test_corrupt_archive_rejected(self):
         ci.archive(self.root, self.env)

@@ -1,6 +1,8 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
   workflow_call:
   pull_request:
   workflow_dispatch:
@@ -33,6 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          fetch-depth: 0
           persist-credentials: false
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -56,6 +59,11 @@ jobs:
         with:
           path: tmp/corpus
           key: corpus-${{ hashFiles('tools/corpus/corpus.sh') }}
+      - name: Verify stable release inputs
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: mise exec -- python3 -B -m tools.package.stable "$RELEASE_TAG"
       - name: Validate and package
         run: mise run ci:check
       - name: Upload binary

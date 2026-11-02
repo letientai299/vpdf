@@ -162,7 +162,7 @@ commands! {
   Ocr "ocr" [] "[lang]" Language Document "recognize the page with Tesseract";
   Help "help" ["h"] "[topic]" Help Home "open the built-in manual";
   HelpBeside "help!" ["h!"] "[topic]" Help Home "open help beside this pane";
-  Version "version" [] "" Nothing Home "show build information";
+  Version "version" [] "" Nothing Home "show version and release notes";
   Quit "quit" ["q", "q!", "x", "wq"] "" Nothing Home
     "close this pane, tab, then reader";
   QuitAll "qall" ["qa", "quitall", "qa!"] "" Nothing Home "close every tab";

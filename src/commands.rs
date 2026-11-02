@@ -861,7 +861,7 @@ mod tests {
   }
 
   #[test]
-  fn version_opens_build_panel() -> Result<()> {
+  fn version_opens_notes() -> Result<()> {
     let root = tempfile::tempdir()?;
     let path = root.path().join("source.pdf");
     crate::fixtures::pdf(&path, &["first"], "")?;
@@ -886,11 +886,14 @@ mod tests {
         panel.rows().iter().map(|row| row.label.as_str()).collect::<Vec<_>>(),
         lines.collect::<Vec<_>>()
       );
-      // The build section starts folded, and stays so through a reload.
-      assert_eq!(panel.branch_closed(3), Some(true));
+      assert!(
+        panel.rows().iter().any(
+          |row| row.label == format!("Vpdf v{}", env!("CARGO_PKG_VERSION"))
+        )
+      );
       app.reload_with("")?;
       let panel = &app.panel.as_ref().expect("version panel").view;
-      assert_eq!(panel.branch_closed(3), Some(true));
+      assert_eq!(panel.kind(), PanelKind::Version);
       assert!(!app.quit);
     }
     Ok(())

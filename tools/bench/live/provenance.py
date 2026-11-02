@@ -1,5 +1,6 @@
 """Separate embedded build identity from the runtime checkout."""
 
+import re
 import subprocess
 
 
@@ -27,6 +28,13 @@ def embedded(version):
                 dirty={"true": True, "false": False}.get(words[2]),
                 patch=None if words[3] == "unknown" else words[3],
             )
+    for line in version.splitlines():
+        match = re.fullmatch(
+            r"vpdf(?:-gui)? (?:[0-9]+\.[0-9]+\.[0-9]+-dev\+)?([0-9a-f]{40}) \(\d{4}-\d{2}-\d{2}\)( \[dirty\])?(?: \[bench-events\])?",
+            line,
+        )
+        if match:
+            return dict(revision=match[1], dirty=bool(match[2]), patch=None)
     return dict(revision=None, dirty=None, patch=None)
 
 

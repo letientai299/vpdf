@@ -79,9 +79,8 @@ impl Native {
     )?;
     integration.set_about(vpdf_macos::About {
       version: vpdf::version::BUILD,
-      description: vpdf::version::DESCRIPTION,
+      notes: vpdf::version::CHANGELOG,
       repository: vpdf::version::REPOSITORY,
-      build: &vpdf::version::build_details(),
     });
     let _ = restore.set(Box::new(integration.restorer()));
     documents.set_wake(integration.deferrer());

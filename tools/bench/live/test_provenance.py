@@ -16,6 +16,16 @@ class ProvenanceTests(unittest.TestCase):
             embedded("old binary"), dict(revision=None, dirty=None, patch=None)
         )
 
+    def test_version_identity(self):
+        revision = "a" * 40
+        for suffix, dirty in [("", False), (" [dirty]", True)]:
+            self.assertEqual(
+                embedded(
+                    f"vpdf 0.1.0-dev+{revision} (2026-11-02){suffix}\n\nNotes"
+                ),
+                dict(revision=revision, dirty=dirty, patch=None),
+            )
+
     def test_failed_git_is_unknown(self):
         env = {
             key: value

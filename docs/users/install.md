@@ -7,26 +7,24 @@ dependency. OCR and desktop integrations use optional external programs.
 
 ## Distribution
 
-Install a snapshot with [Homebrew][homebrew]:
+Install a stable release with [Homebrew][homebrew]:
 
 ```sh
 brew install letientai299/tap/vpdf
 vpdf document.pdf
 ```
 
-The tap follows published snapshots from successful `main` builds. Use
-`brew update` and `brew upgrade vpdf` to refresh an installation.
+Use `brew update` and `brew upgrade vpdf` to refresh an installation.
 
-With [mise][mise], install the rolling development prerelease:
+With [mise][mise], install and activate the latest stable release:
 
 ```sh
-mise i github:letientai299/vpdf@dev
-mise exec github:letientai299/vpdf@dev -- vpdf document.pdf
+mise use -g github:letientai299/vpdf@latest
+vpdf document.pdf
 ```
 
-Use `mise use -g github:letientai299/vpdf@dev` to activate it globally, or
-`mise i --force github:letientai299/vpdf@dev` to fetch a newer rolling build.
-Development snapshots can introduce breaking changes.
+Pin a release with `mise use -g github:letientai299/vpdf@0.1.0`.
+Only stable terminal binaries are published; development builds require source.
 
 The terminal reader runs in a compatible terminal. The macOS native app uses
 its own window and does not require terminal graphics or keyboard negotiation.

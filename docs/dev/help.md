@@ -50,7 +50,7 @@ regenerate; failed exports leave the previous PDF intact. The fingerprinted
 `CARGO_TARGET_DIR` for generation and Cargo, including when passing Cargo's
 `--target-dir`. A clean source build generates assets. Application execution
 needs neither source files nor generation tools. `--version` verifies the
-bundled hashes and reports their shared identity.
+bundled hashes before printing the version and embedded release notes.
 
 ## Delivery checks
 

@@ -141,9 +141,9 @@ class AppTests(unittest.TestCase):
         version = subprocess.check_output([binary, "--version"], text=True)
         lines = version.splitlines()
         self.assertIn("https://github.com/letientai299/vpdf", lines)
-        self.assertTrue(lines[0].startswith("Vpdf:"))
-        self.assertTrue(lines[-1].startswith("vpdf-gui "))
-        self.assertRegex(version, r"(?m)^Help assets: [0-9a-f]{64}$")
+        self.assertTrue(lines[0].startswith("vpdf-gui "))
+        self.assertEqual(lines[-1], "https://github.com/letientai299/vpdf")
+        self.assertIn("# Vpdf v", version)
         notices = (
             app / "Contents/Resources/third-party-notices.txt"
         ).read_text()

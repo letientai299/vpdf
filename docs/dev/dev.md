@@ -745,15 +745,17 @@ latency.
 
 ## Release decisions
 
+Use the [installation test plan][release-testing] before publishing a release.
+
 [Packaging][package] stages a separate executable under `target/dist`,
 respecting `CARGO_TARGET_DIR`. Linux packaging compresses it with UPX, verifies
 the packed binary, and checks startup. macOS packaging retains the stripped
 executable. Packaging leaves the Cargo build uncompressed.
 
-The [release workflow][release] publishes a rolling development prerelease and
-commit-specific snapshots after CI. It checks installation through mise before
-updating the Homebrew tap. The rolling tag moves; use the snapshot identity when
-a result needs a reproducible release reference.
+The [release workflow][release] builds stable terminal releases from version
+tags after CI. It uses the matching file in `changelogs/` for release notes,
+verifies installation through mise, and updates Homebrew. Stable tags and
+assets remain fixed. The native macOS app remains source-only.
 
 [tasks]: ../../.config/mise.toml
 [worktrunk]: https://worktrunk.dev/
@@ -817,3 +819,4 @@ a result needs a reproducible release reference.
 [demo-media]: demo-media.md
 [demo-host]: https://github.com/letientai299/vpdf/issues/9
 [unification]: https://doc.rust-lang.org/cargo/reference/unstable.html#feature-unification
+[release-testing]: release-testing.md

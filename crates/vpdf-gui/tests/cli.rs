@@ -8,9 +8,9 @@ fn version_text_matches_cli() -> Result<(), Box<dyn std::error::Error>> {
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout)?;
     assert_eq!(stdout, format!("{}\n", vpdf::version::text(false)));
-    assert!(stdout.starts_with(vpdf::version::ABOUT));
+    assert!(stdout.contains(vpdf::version::CHANGELOG));
     assert_eq!(
-      stdout.lines().last(),
+      stdout.lines().next(),
       Some(format!("vpdf-gui {}", vpdf::version::BUILD).as_str())
     );
   }

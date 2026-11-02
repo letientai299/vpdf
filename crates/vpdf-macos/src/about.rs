@@ -16,9 +16,8 @@ const INSET: f64 = 24.0;
 
 pub struct About<'a> {
   pub version: &'a str,
-  pub description: &'a str,
+  pub notes: &'a str,
   pub repository: &'a str,
-  pub build: &'a str,
 }
 
 pub(super) fn panel(
@@ -27,9 +26,7 @@ pub(super) fn panel(
 ) -> Retained<NSPanel> {
   let header = header(about);
   let header = text_view(&header, mtm);
-  let diagnostics = text_view(&attributed(about.build), mtm);
-  let height =
-    176.0 + header.frame().size.height + diagnostics.frame().size.height;
+  let height = 128.0 + header.frame().size.height;
   let panel = NSPanel::initWithContentRect_styleMask_backing_defer(
     NSPanel::alloc(mtm),
     rect(0.0, 0.0, WIDTH, height),
@@ -62,11 +59,6 @@ pub(super) fn panel(
   let top = height - 104.0 - header.frame().size.height;
   header.setFrameOrigin(NSPoint::new(INSET, top));
   content.addSubview(&header);
-  let label = NSTextField::labelWithString(ns_string!("Diagnostics"), mtm);
-  label.setFrame(rect(INSET, top - 36.0, WIDTH - 2.0 * INSET, 20.0));
-  content.addSubview(&label);
-  diagnostics.setFrameOrigin(NSPoint::new(INSET, INSET));
-  content.addSubview(&diagnostics);
   panel
 }
 
@@ -102,9 +94,9 @@ fn text_view(
 }
 
 fn header(about: &About<'_>) -> Retained<NSMutableAttributedString> {
-  let text = format!("{}\n\nProject · Report an issue", about.description);
+  let text = format!("{}\n\nProject · Report an issue", about.notes);
   let header = attributed(&text);
-  let start = format!("{}\n\n", about.description).encode_utf16().count();
+  let start = format!("{}\n\n", about.notes).encode_utf16().count();
   let issues = format!("{}/issues", about.repository.trim_end_matches('/'));
   for (offset, label, url) in [
     (0, "Project", about.repository),
@@ -166,14 +158,12 @@ mod tests {
   fn separate_header_links() {
     let about = About {
       version: "abc1234 (2026-10-27) [bench-events]",
-      description: "Vpdf 📖: a PDF reader.",
+      notes: "Vpdf 📖: a PDF reader.",
       repository: "https://example.com/vpdf",
-      build: "Source revision: abc1234",
     };
     let header = header(&about);
     let text = header.string().to_string();
-    assert!(text.starts_with(about.description));
-    assert!(!text.contains(about.build));
+    assert!(text.starts_with(about.notes));
     for (label, url) in [
       ("Project", about.repository.to_owned()),
       ("Report an issue", format!("{}/issues", about.repository)),

@@ -25,6 +25,7 @@ vpdf document.pdf
 ```
 
 See [terminal setup][setup] for the required graphics and keyboard protocols.
+The native macOS app remains source-only; see [build instructions][development].
 
 ## Help and documentation
 
@@ -48,3 +49,4 @@ licensing][notices].
 [docs]: docs/readme.md
 [license]: LICENSE
 [notices]: docs/users/install.md#licensing
+[development]: docs/dev/dev.md#build-from-source

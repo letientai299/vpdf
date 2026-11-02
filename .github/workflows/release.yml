@@ -2,43 +2,35 @@ name: Release
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
-    inputs:
-      tap_snapshot:
-        description: Published snapshot to send to Homebrew
-        required: true
-        type: string
+    tags: ["v*"]
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-main
+  group: release-stable
   cancel-in-progress: false
 
 jobs:
   build:
-    if: github.event_name == 'push'
     uses: ./.github/workflows/ci.yml
 
   publish:
-    name: Publish binaries
+    name: Publish stable binaries
     needs: build
-    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write
-    concurrency:
-      group: publish-main
-      cancel-in-progress: false
-    env:
-      RELEASE_TAG: dev
-    outputs:
-      tag: ${{ steps.release.outputs.tag }}
-      snapshot: ${{ steps.release.outputs.snapshot }}
     steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify release identity
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 -B -m tools.package.stable "$RELEASE_TAG"
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           pattern: vpdf-*
@@ -49,43 +41,36 @@ jobs:
         run: |
           for platform in linux-x86_64 macos-aarch64; do
             sha256sum --check "vpdf-${platform}.tar.gz.sha256"
-            tar -tzf "vpdf-${platform}.tar.gz" | grep -Fx vpdf
+            test "$(tar -tzf "vpdf-${platform}.tar.gz")" = vpdf
           done
-      - name: Publish rolling release
-        id: release
+      - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          current=$(gh api "repos/$GH_REPO/git/ref/${GITHUB_REF#refs/}" --jq .object.sha)
-          if [ "$current" != "$GITHUB_SHA" ]; then
-            echo 'Skipping superseded branch build'
-            exit 0
-          fi
-          snapshot="snapshot-$GITHUB_SHA"
-          printf 'Snapshot build: %s\n' "$GITHUB_SHA" > notes.md
-          if ! gh release view "$snapshot" >/dev/null 2>&1; then
-            gh release create "$snapshot" dist/* --target "$GITHUB_SHA" \
-              --title "$snapshot" --notes-file notes.md --prerelease --latest=false
-          fi
-          printf 'Rolling %s build: %s\n' "$RELEASE_TAG" "$GITHUB_SHA" > notes.md
+          python3 -B -m tools.package.publication "$RELEASE_TAG" dist
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" dist/* --clobber
-            gh api --method PATCH "repos/$GH_REPO/git/refs/tags/$RELEASE_TAG" \
-              -f sha="$GITHUB_SHA" -F force=true
-            gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file notes.md \
-              --prerelease --latest=false
+            draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)
+            if [ "$draft" = true ]; then
+              gh release upload "$RELEASE_TAG" dist/* --clobber
+              gh release edit "$RELEASE_TAG" --draft=false --latest \
+                --notes-file "changelogs/$RELEASE_TAG.md"
+            else
+              mkdir existing
+              gh release download "$RELEASE_TAG" --dir existing
+              python3 -B -m tools.package.publication "$RELEASE_TAG" existing --verify
+            fi
           else
-            gh release create "$RELEASE_TAG" dist/* --target "$GITHUB_SHA" \
-              --title "$RELEASE_TAG" --notes-file notes.md --prerelease --latest=false
+            gh release create "$RELEASE_TAG" dist/* --verify-tag --draft \
+              --title "Vpdf $RELEASE_TAG" \
+              --notes-file "changelogs/$RELEASE_TAG.md"
+            gh release edit "$RELEASE_TAG" --draft=false --latest
           fi
-          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
-          echo "snapshot=$snapshot" >> "$GITHUB_OUTPUT"
 
   install:
     name: Mise install (${{ matrix.os }})
     needs: publish
-    if: needs.publish.outputs.tag != ''
     strategy:
       fail-fast: false
       matrix:
@@ -93,61 +78,56 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
       - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
         with:
           install: false
       - name: Install published binary
         env:
-          RELEASE_TAG: ${{ needs.publish.outputs.tag }}
+          RELEASE_TAG: ${{ github.ref_name }}
           MISE_DATA_DIR: ${{ runner.temp }}/mise-install/data
           MISE_CACHE_DIR: ${{ runner.temp }}/mise-install/cache
           MISE_CONFIG_DIR: ${{ runner.temp }}/mise-install/config
           MISE_STATE_DIR: ${{ runner.temp }}/mise-install/state
-          MISE_USE_VERSIONS_HOST: 'false'
+          MISE_USE_VERSIONS_HOST: "false"
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          tool="github:$GITHUB_REPOSITORY@$RELEASE_TAG"
+          mise install python
+          tool="github:$GITHUB_REPOSITORY@${RELEASE_TAG#v}"
           mise i "$tool"
-          mise exec "$tool" -- vpdf --version
+          mise exec "$tool" -- vpdf --version > actual.txt
+          mise exec python -- python3 -c 'import sys; from pathlib import Path; from tools.package.stable import verify_version; verify_version(Path.cwd(), sys.argv[1], Path("actual.txt").read_text())' "$RELEASE_TAG"
           mise i --force "$tool"
-          mise exec "$tool" -- vpdf --version
+          mise exec "$tool" -- vpdf -V > reinstalled.txt
+          cmp actual.txt reinstalled.txt
 
   tap:
     name: Update Homebrew tap
-    needs: [publish, install]
-    if: >-
-      always() && !cancelled() &&
-      ((github.event_name == 'push' && needs.install.result == 'success' && needs.publish.outputs.snapshot != '') ||
-      github.event_name == 'workflow_dispatch')
+    needs: install
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           repository: letientai299/homebrew-tap
           ref: main
           ssh-key: ${{ secrets.HOMEBREW_TAP_SSH_KEY }}
-      - name: Update snapshot formula
+      - name: Update stable formula
         env:
           GH_TOKEN: ${{ github.token }}
-          SNAPSHOT: ${{ inputs.tap_snapshot || needs.publish.outputs.snapshot }}
-          PYTHONDONTWRITEBYTECODE: '1'
-        run: python3 scripts/update-vpdf.py "$SNAPSHOT"
+          RELEASE_TAG: ${{ github.ref_name }}
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 scripts/update-vpdf.py "$RELEASE_TAG"
       - name: Publish formula
         run: |
           if git diff --quiet -- Formula/vpdf.rb; then
-            echo 'Tap already has this snapshot'
+            echo 'Tap already has this release'
           else
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git add Formula/vpdf.rb
-            git commit -m 'chore: update vpdf snapshot'
+            git commit -m 'chore: update vpdf release'
             git push origin HEAD:main
           fi
-      - name: Retain latest snapshots
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PYTHONDONTWRITEBYTECODE: '1'
-        run: python3 scripts/snapshots.py --apply

@@ -13,6 +13,7 @@ from tools.build.receipts import digest_file as checksum
 from tools.build.receipts import run_check
 from tools.build.worker import working_files
 from tools.check.hooks import check_lint, execute
+from tools.package.stable import verify_version
 
 
 def archive_paths(root, env):
@@ -45,7 +46,15 @@ def verify_archive(archive, digest, root, env):
             ):
                 shutil.copyfileobj(source, out)
             binary.chmod(members[0].mode & 0o777)
-            execute([str(binary), "--version"], root, env)
+            output = subprocess.check_output(
+                [str(binary), "--version"],
+                cwd=root,
+                env=env,
+                text=True,
+            )
+            if env.get("GITHUB_REF_TYPE") == "tag":
+                verify_version(root, env["GITHUB_REF_NAME"], output)
+            print(output, end="", flush=True)
 
 
 def archive(root, env):

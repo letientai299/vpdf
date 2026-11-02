@@ -78,11 +78,11 @@ entry and reopens the document. `:ocr eng+vie` recognizes the page with
 installed models. `:print` opens macOS printing for an unencrypted file-backed
 PDF.
 
-Use `:info` for document, reader, and terminal diagnostics; `:version` for build
-identity; `:perf` for performance statistics. `:close` closes a pane,
-`:tabclose` its entire tab, and `:qall` every tab and the reader.
-`:q!`, `:x`, and `:wq` match `:q`; `:qa!` matches `:qall`. `ZZ` and `ZQ`
-also close the focused pane.
+Use `:info` for document, reader, and terminal diagnostics; `:version` for the
+version and release notes; `:perf` for performance statistics. `:close` closes a
+pane, `:tabclose` its entire tab, and `:qall` every tab and the reader. `:q!`,
+`:x`, and `:wq` match `:q`; `:qa!` matches `:qall`. `ZZ` and `ZQ` also close the
+focused pane.
 
 This ends the teaching chapters. In the reader, continue into the generated
 action, configuration, and command references, or return to the

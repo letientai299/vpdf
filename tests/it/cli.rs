@@ -13,13 +13,16 @@ fn help_and_version_name_the_project() -> Result<()> {
     let output = Command::new(env!("CARGO_BIN_EXE_vpdf")).arg(flag).output()?;
     let stdout = String::from_utf8(output.stdout)?;
     assert!(output.status.success(), "{flag}");
-    assert!(stdout.contains(HEADLINE), "{flag}: {stdout}");
+    if flag == "--help" {
+      assert!(stdout.contains(HEADLINE), "{flag}: {stdout}");
+    }
     assert!(stdout.contains(REPOSITORY), "{flag}: {stdout}");
     if flag == "--help" {
       assert!(stdout.contains("Usage: vpdf"), "{stdout}");
     } else {
-      assert!(stdout.starts_with(HEADLINE), "{stdout}");
-      assert!(stdout.lines().last().unwrap().starts_with("vpdf "), "{stdout}");
+      assert!(stdout.starts_with("vpdf "), "{stdout}");
+      assert_eq!(stdout.lines().last(), Some(REPOSITORY));
+      assert!(stdout.contains(vpdf::version::CHANGELOG));
     }
   }
   Ok(())

@@ -7,6 +7,7 @@ use std::process::Command;
 mod provenance;
 
 mod help;
+mod identity;
 
 fn git(args: &[&str]) -> Option<String> {
   let output = Command::new("git").args(args).output().ok()?;
@@ -39,23 +40,47 @@ fn version() -> Option<String> {
   if watch("logs/HEAD").is_none() {
     watch("refs/heads");
   }
-  let tag = git(&["describe", "--tags", "--exact-match", "--match", "v[0-9]*"]);
-  if let Some(tag) = tag {
-    return Some(tag.trim_start_matches('v').to_owned());
+  if let Some(files) = git(&["ls-files"]) {
+    for path in files.lines() {
+      println!("cargo::rerun-if-changed={path}");
+    }
   }
-  let revision = git(&["rev-parse", "--short", "HEAD"])?;
-  let date = git(&["log", "-1", "--format=%cs"])?;
-  Some(format!("{revision} ({date})"))
+  let tag = git(&["describe", "--tags", "--exact-match", "--match", "v[0-9]*"]);
+  let revision = git(&["rev-parse", "HEAD"]);
+  let date = git(&["log", "-1", "--format=%cs"]);
+  let dirty =
+    git(&["status", "--porcelain", "--untracked-files=all"]).is_some();
+  Some(identity::version(
+    env!("CARGO_PKG_VERSION"),
+    tag.as_deref(),
+    revision.as_deref(),
+    date.as_deref(),
+    dirty,
+  ))
 }
 
 fn main() {
   // Overlaps help facts with the Git queries below.
   let assets = std::thread::spawn(help::prepare);
-  let version =
-    version().unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_owned());
+  let version = version().unwrap_or_else(|| {
+    identity::version(env!("CARGO_PKG_VERSION"), None, None, None, false)
+  });
   println!("cargo::rustc-env=VPDF_VERSION={version}");
-  for path in ["src", "crates", "tools", ".config", "Cargo.toml", "Cargo.lock"]
-  {
+  let package = env!("CARGO_PKG_VERSION");
+  let notes = std::fs::read_to_string(format!("changelogs/v{package}.md"))
+    .expect("Build changelog missing");
+  let notes = identity::notes(package, &notes);
+  let output = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+  std::fs::write(output.join("changelog.md"), notes).unwrap();
+  for path in [
+    "src",
+    "crates",
+    "tools",
+    ".config",
+    "changelogs",
+    "Cargo.toml",
+    "Cargo.lock",
+  ] {
     println!("cargo::rerun-if-changed={path}");
   }
   let root = Path::new(env!("CARGO_MANIFEST_DIR"));
