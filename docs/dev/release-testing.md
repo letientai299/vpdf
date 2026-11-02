@@ -30,8 +30,9 @@ Run installs outside the source checkout with no existing `vpdf` on `PATH`.
    and expected complete version text. Verify archive contents and executable
    permissions. Use these exact archives in both package-manager tests.
 4. Obtain a public PDF with `mise run corpus`; use the corpus verifier and
-   record its hash. Test `vpdf info` against it and compare installed output
-   with output from the candidate executable. Do not substitute a shell stub.
+   record its hash. Test `VPDF_PREVIEW=text vpdf PDF` against it and compare
+   installed output with output from the candidate executable. Do not substitute
+   a shell stub.
 
 A local tag is a build fixture, not a published release. Preserve that
 distinction in reports and never call a branch build a stable release.
@@ -53,7 +54,8 @@ use a disposable trusted test certificate rather than disabling TLS validation.
 
 1. With empty mise directories, resolve the tool at `0.1.0`, install it, locate
    its executable, and check its SHA-256 against the unpacked candidate.
-2. Verify `--version`, `-V`, embedded notes, project URL, and `info` output.
+2. Verify `--version`, `-V`, embedded notes, project URL, and headless
+   text-preview output.
 3. Reset state. Resolve `latest` with older stable, newer prerelease, and draft
    records present. Assert selection of the expected stable version.
 4. Force reinstall and repeat identity and PDF checks. Confirm no user/global
@@ -76,7 +78,8 @@ between the test formula and the intended production formula.
 1. Run `brew style`, then tap the isolated checkout under a test-only tap name.
    Install its `vpdf` in the disposable host's clean prefix.
 2. Run `brew test` and verify the installed executable hash, version aliases,
-   full notes, and real-PDF `info` output. Reinstall and repeat the checks.
+   full notes, and real-PDF text-preview output. Reinstall and repeat the
+   checks.
 3. On a fresh host, install the currently pinned snapshot from its existing
    public release. Record its version and hash. Advance only the isolated tap
    to the candidate formula, run `brew upgrade`, and verify candidate identity.
