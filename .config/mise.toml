@@ -222,7 +222,6 @@ depends = [
   "test:build-worker",
   "test:hooks",
   "test:validation",
-  "test:docs",
   "test:help-assets",
   "test:demo",
   "test:bench-report",
@@ -235,6 +234,8 @@ depends = [
   "test:ci",
   "check:packages",
 ]
+# Cargo can replace artifacts during rustdoc tests.
+run = "mise run test:docs"
 
 [tasks."_test:rust"]
 hide = true
