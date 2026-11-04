@@ -1,5 +1,4 @@
-//! Names the build for `--version`: its release tag, else its commit
-//! and commit date.
+//! Selects release or development versions from Git tags.
 use std::path::Path;
 use std::process::Command;
 
@@ -15,9 +14,8 @@ fn git(args: &[&str]) -> Option<String> {
   (output.status.success() && !text.is_empty()).then_some(text)
 }
 
-/// The commit naming this source tree, unless git found an enclosing
-/// repository, as for an unpacked crate inside another checkout.
-fn version() -> Option<String> {
+/// Ignores enclosing repositories for source archives.
+fn version() -> Option<(String, Option<String>)> {
   let top = git(&["rev-parse", "--show-toplevel"])?;
   let own = std::fs::canonicalize(top).ok()?
     == std::fs::canonicalize(env!("CARGO_MANIFEST_DIR")).ok()?;
@@ -45,31 +43,33 @@ fn version() -> Option<String> {
       println!("cargo::rerun-if-changed={path}");
     }
   }
-  let tag = git(&["describe", "--tags", "--exact-match", "--match", "v[0-9]*"]);
-  let revision = git(&["rev-parse", "HEAD"]);
-  let date = git(&["log", "-1", "--format=%cs"]);
-  let dirty =
-    git(&["status", "--porcelain", "--untracked-files=all"]).is_some();
-  Some(identity::version(
-    env!("CARGO_PKG_VERSION"),
-    tag.as_deref(),
-    revision.as_deref(),
-    date.as_deref(),
-    dirty,
+  let exact = git(&["tag", "--points-at", "HEAD"]);
+  let reachable = git(&["tag", "--merged", "HEAD"]);
+  let release = identity::release(exact.as_deref().unwrap_or_default())
+    .map(|tag| tag.to_string());
+  Some((
+    identity::version(
+      env!("CARGO_PKG_VERSION"),
+      exact.as_deref().unwrap_or_default(),
+      reachable.as_deref().unwrap_or_default(),
+    ),
+    release,
   ))
 }
 
 fn main() {
   // Overlaps help facts with the Git queries below.
   let assets = std::thread::spawn(help::prepare);
-  let version = version().unwrap_or_else(|| {
-    identity::version(env!("CARGO_PKG_VERSION"), None, None, None, false)
+  let (version, release) = version().unwrap_or_else(|| {
+    (identity::version(env!("CARGO_PKG_VERSION"), "", ""), None)
   });
   println!("cargo::rustc-env=VPDF_VERSION={version}");
-  let package = env!("CARGO_PKG_VERSION");
-  let notes = std::fs::read_to_string(format!("changelogs/v{package}.md"))
-    .expect("Build changelog missing");
-  let notes = identity::notes(package, &notes);
+  let notes = identity::changelog(
+    Path::new("changelogs"),
+    release.as_deref(),
+    env!("CARGO_PKG_VERSION"),
+  )
+  .expect("Build changelog unavailable");
   let output = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
   std::fs::write(output.join("changelog.md"), notes).unwrap();
   for path in [

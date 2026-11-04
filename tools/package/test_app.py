@@ -143,7 +143,6 @@ class AppTests(unittest.TestCase):
         self.assertIn("https://github.com/letientai299/vpdf", lines)
         self.assertTrue(lines[0].startswith("vpdf-gui "))
         self.assertEqual(lines[-1], "https://github.com/letientai299/vpdf")
-        self.assertIn("# Vpdf v", version)
         notices = (
             app / "Contents/Resources/third-party-notices.txt"
         ).read_text()
@@ -151,24 +150,9 @@ class AppTests(unittest.TestCase):
             self.assertIn(path.read_text(), notices)
         for path in (ROOT / "docs/licenses").glob("*.txt"):
             self.assertIn(path.read_text(), notices)
-        metadata = json.loads(
-            subprocess.check_output(
-                [
-                    "cargo",
-                    "metadata",
-                    "--locked",
-                    "--no-deps",
-                    "--format-version",
-                    "1",
-                ],
-                cwd=ROOT,
-                text=True,
-            )
-        )
-        package = next(
-            p for p in metadata["packages"] if p["name"] == "vpdf-gui"
-        )
-        self.assertEqual(info["CFBundleShortVersionString"], package["version"])
+        expected = re.match(r"vpdf-gui ([0-9]+\.[0-9]+\.[0-9]+)", lines[0])
+        self.assertIsNotNone(expected)
+        self.assertEqual(info["CFBundleShortVersionString"], expected[1])
         self.assertEqual(
             info["CFBundleVersion"], info["CFBundleShortVersionString"]
         )

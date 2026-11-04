@@ -886,11 +886,6 @@ mod tests {
         panel.rows().iter().map(|row| row.label.as_str()).collect::<Vec<_>>(),
         lines.collect::<Vec<_>>()
       );
-      assert!(
-        panel.rows().iter().any(
-          |row| row.label == format!("Vpdf v{}", env!("CARGO_PKG_VERSION"))
-        )
-      );
       app.reload_with("")?;
       let panel = &app.panel.as_ref().expect("version panel").view;
       assert_eq!(panel.kind(), PanelKind::Version);

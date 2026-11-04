@@ -77,6 +77,33 @@ class DemoTests(unittest.TestCase):
         self.assertEqual(identity["build_profile"], "debug")
         self.assertEqual(identity["binary_sha256"], demo.digest(self.binary))
 
+    def test_semver_revision(self):
+        reported = "a" * 40
+        for version in ("0.1.0-dev", "0.1.0-beta", "0.1.0-rc.1"):
+            with (
+                self.subTest(version=version),
+                patch.object(
+                    demo,
+                    "run",
+                    return_value=(
+                        f"vpdf {version}\n"
+                        f"build-source {reported} true patch\n\nNotes"
+                    ),
+                ),
+                patch.object(
+                    subprocess,
+                    "run",
+                    return_value=SimpleNamespace(returncode=1, stdout=""),
+                ),
+            ):
+                identity = demo.binary_identity(self.binary, "debug")
+                self.assertEqual(identity["commit"], reported)
+                self.assertEqual(identity["binary_version"], f"vpdf {version}")
+                self.assertEqual(
+                    identity["build_source"],
+                    dict(revision=reported, dirty=True, patch="patch"),
+                )
+
     def test_unknown_revision(self):
         with patch.object(demo, "run", return_value="vpdf 0.1.0"):
             identity = demo.binary_identity(self.binary, "unknown")

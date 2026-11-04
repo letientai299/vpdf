@@ -12,9 +12,6 @@ def validate(root, tag):
         r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", tag
     ):
         raise ValueError("Stable release tag required")
-    package = tomllib.loads((root / "Cargo.toml").read_text())["package"]
-    if tag != f"v{package['version']}":
-        raise ValueError("Tag differs from Cargo version")
     notes = (root / "changelogs" / f"{tag}.md").read_text().strip()
     heading, body = notes.split("\n", 1)
     if heading != f"# Vpdf {tag}" or not body.strip():

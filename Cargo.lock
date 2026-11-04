@@ -3489,6 +3489,7 @@ dependencies = [
  "mupdf",
  "notify",
  "percent-encoding",
+ "semver",
  "serde",
  "serde_json",
  "sha2",

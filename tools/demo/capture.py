@@ -15,6 +15,7 @@ import termios
 import time
 from pathlib import Path
 
+from tools.bench.live.provenance import embedded
 from tools.demo.window import Window
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -297,18 +298,13 @@ def input_hashes(corpus, selected):
 
 
 def binary_identity(binary, profile):
+    output = run(str(binary), "--version")
     version = next(
-        line
-        for line in run(str(binary), "--version").splitlines()
-        if line.startswith("vpdf ")
+        line for line in output.splitlines() if line.startswith("vpdf ")
     )
-    match = re.fullmatch(
-        r"vpdf (?:[0-9]+\.[0-9]+\.[0-9]+-dev\+)?([0-9a-f]{7,40}) \(\d{4}-\d{2}-\d{2}\)(?: \[dirty\])?(?: \[bench-events\])?",
-        version,
-    )
-    commit = None
-    if match:
-        commit = match[1]
+    source = embedded(output)
+    commit = source["revision"]
+    if commit:
         resolved = subprocess.run(
             ["git", "rev-parse", "--verify", f"{commit}^{{commit}}"],
             cwd=ROOT,
@@ -321,6 +317,7 @@ def binary_identity(binary, profile):
     return {
         "commit": commit,
         "binary_version": version,
+        "build_source": source,
         "build_profile": profile,
         "binary_sha256": digest(binary),
     }

@@ -30,7 +30,7 @@ def embedded(version):
             )
     for line in version.splitlines():
         match = re.fullmatch(
-            r"vpdf(?:-gui)? (?:[0-9]+\.[0-9]+\.[0-9]+-dev\+)?([0-9a-f]{40}) \(\d{4}-\d{2}-\d{2}\)( \[dirty\])?(?: \[bench-events\])?",
+            r"vpdf(?:-gui)? (?:[0-9]+\.[0-9]+\.[0-9]+-dev\+)?([0-9a-f]{7,40}) \(\d{4}-\d{2}-\d{2}\)( \[dirty\])?(?: \[bench-events\])?",
             line,
         )
         if match:

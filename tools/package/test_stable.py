@@ -10,7 +10,7 @@ class StableTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "Cargo.toml").write_text(
-                '[package]\nversion = "0.1.0"\nrepository = "https://example.com/vpdf"\n'
+                '[package]\nversion = "0.2.0"\nrepository = "https://example.com/vpdf"\n'
             )
             (root / "changelogs").mkdir()
             notes = root / "changelogs/v0.1.0.md"
@@ -29,7 +29,6 @@ class StableTests(unittest.TestCase):
                 "snapshot-abc",
                 "v0.1.0-rc.1",
                 "v01.1.0",
-                "v0.2.0",
             ]:
                 with self.subTest(tag=tag), self.assertRaises(ValueError):
                     validate(root, tag)

@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::io::{self, Write};
 
 pub const ABOUT: &str =
@@ -19,7 +20,17 @@ pub const CHANGELOG: &str =
 
 pub fn text(terminal: bool) -> String {
   crate::manual::identity();
-  format!("{}\n\n{CHANGELOG}\n\n{REPOSITORY}", name(terminal))
+  let mut text = name(terminal);
+  if DIRTY != "false" || VERSION.contains('-') || cfg!(feature = "bench-events")
+  {
+    write!(text, "\nbuild-source {REVISION} {DIRTY} {PATCH}").unwrap();
+  }
+  if !CHANGELOG.is_empty() {
+    text.push_str("\n\n");
+    text.push_str(CHANGELOG);
+  }
+  write!(text, "\n\n{REPOSITORY}").unwrap();
+  text
 }
 
 pub fn panel_text(terminal: bool) -> String {
@@ -55,7 +66,22 @@ mod tests {
   fn notes_match_frontends() {
     for terminal in [true, false] {
       let text = super::text(terminal);
-      assert!(text.starts_with(&super::name(terminal)));
+      assert_eq!(text.lines().next(), Some(super::name(terminal).as_str()));
+      if super::DIRTY != "false"
+        || super::VERSION.contains('-')
+        || cfg!(feature = "bench-events")
+      {
+        assert_eq!(
+          text.lines().nth(1).unwrap(),
+          format!(
+            "build-source {} {} {}",
+            super::REVISION,
+            super::DIRTY,
+            super::PATCH
+          )
+        );
+      }
+      assert!(!text.contains("\n\n\n"));
       assert!(text.contains(super::CHANGELOG));
       assert!(text.ends_with(super::REPOSITORY));
       assert!(!text.contains("Source revision:"));

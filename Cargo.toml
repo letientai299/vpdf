@@ -151,10 +151,12 @@ sha2.workspace = true
 mupdf = { workspace = true, features = ["sys-lib-zlib"] }
 
 [dev-dependencies]
+semver = "1"
 flate2.workspace = true
 sha2.workspace = true
 
 [build-dependencies]
+semver = "1"
 vpdf-ui.workspace = true
 
 [patch.crates-io]

@@ -24,7 +24,7 @@ Run installs outside the source checkout with no existing `vpdf` on `PATH`.
    isolated local repository with independent refs. Add `v0.1.0` only there;
    never push it. Do not add a release tag to the shared task repository.
 2. Run the existing CI recipe on each supported build host. Check that the
-   isolated tag, Cargo version, and changelog agree. Linux builds run in a
+   isolated tag, binary version, and changelog agree. Linux builds run in a
    local container; copy only binaries and public PDFs to a remote test host.
 3. Record the source revision, archive hashes, executable hashes, tool versions,
    and expected complete version text. Verify archive contents and executable

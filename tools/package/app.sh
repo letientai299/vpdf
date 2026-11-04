@@ -24,12 +24,8 @@ install -m 755 "$binary" "$app/Contents/MacOS/vpdf-gui"
 cp LICENSE LICENSE-AGPL "$app/Contents/Resources/"
 cp "$help_assets/third-party-notices.txt" "$app/Contents/Resources/"
 cp docs/assets/vpdf.icns "$app/Contents/Resources/Vpdf.icns"
-version=$(cargo metadata --locked --no-deps --format-version 1 |
-  python3 -c '
-import json, sys
-packages = json.load(sys.stdin)["packages"]
-print(next(p["version"] for p in packages if p["name"] == "vpdf-gui"))
-')
+version=$("$binary" --version |
+  sed -n '1s/^vpdf-gui \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p')
 minimum=$(sh tools/package/macos-minimum.sh "$binary")
 test -n "$version"
 test -n "$minimum"
