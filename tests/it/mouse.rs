@@ -1312,7 +1312,7 @@ fn tab_passes_through_menus() -> Result<()> {
   Ok(())
 }
 
-/// Rows without a target keep focus.
+/// Rows without a target keep focus; the title row never links.
 #[test]
 fn inert_rows_keep_focus() -> Result<()> {
   let (_directory, mut session) = session(false)?;
@@ -1321,7 +1321,7 @@ fn inert_rows_keep_focus() -> Result<()> {
     Action::Panel(vpdf_ui::keys::PanelKind::Version),
   )?;
   for _ in 0..2 {
-    click(&mut session, (2, 2))?;
+    click(&mut session, (2, 1))?;
   }
   assert!(session.app().unwrap().panel_focused());
   Ok(())
