@@ -752,10 +752,12 @@ respecting `CARGO_TARGET_DIR`. Linux packaging compresses it with UPX, verifies
 the packed binary, and checks startup. macOS packaging retains the stripped
 executable. Packaging leaves the Cargo build uncompressed.
 
-The [release workflow][release] builds stable terminal releases from version
-tags after CI. It uses the matching file in `changelogs/` for release notes,
-verifies installation through mise, and updates Homebrew. Stable tags and
-assets remain fixed. The native macOS app remains source-only.
+Builds of a commit with a version tag report that version; other builds report
+`dev`. The Cargo package version is unused. The [release workflow][release]
+builds stable terminal releases from version tags after CI. It uses the matching
+file in `changelogs/` for release notes, verifies installation through mise, and
+updates Homebrew. Stable tags and assets remain fixed. The native macOS app
+remains source-only.
 
 [tasks]: ../../.config/mise.toml
 [worktrunk]: https://worktrunk.dev/

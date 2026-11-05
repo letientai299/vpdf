@@ -25,7 +25,7 @@ cp LICENSE LICENSE-AGPL "$app/Contents/Resources/"
 cp "$help_assets/third-party-notices.txt" "$app/Contents/Resources/"
 cp docs/assets/vpdf.icns "$app/Contents/Resources/Vpdf.icns"
 version=$("$binary" --version |
-  sed -n '1s/^vpdf-gui \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p')
+  sed -n '1s/^vpdf-gui \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p;1s/^vpdf-gui dev.*/0.0.0/p')
 minimum=$(sh tools/package/macos-minimum.sh "$binary")
 test -n "$version"
 test -n "$minimum"

@@ -79,7 +79,7 @@ class DemoTests(unittest.TestCase):
 
     def test_semver_revision(self):
         reported = "a" * 40
-        for version in ("0.1.0-dev", "0.1.0-beta", "0.1.0-rc.1"):
+        for version in ("dev", "0.1.0-beta", "0.1.0-rc.1"):
             with (
                 self.subTest(version=version),
                 patch.object(

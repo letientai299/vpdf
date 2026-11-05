@@ -150,9 +150,12 @@ class AppTests(unittest.TestCase):
             self.assertIn(path.read_text(), notices)
         for path in (ROOT / "docs/licenses").glob("*.txt"):
             self.assertIn(path.read_text(), notices)
-        expected = re.match(r"vpdf-gui ([0-9]+\.[0-9]+\.[0-9]+)", lines[0])
+        expected = re.match(r"vpdf-gui ([0-9]+\.[0-9]+\.[0-9]+|dev)", lines[0])
         self.assertIsNotNone(expected)
-        self.assertEqual(info["CFBundleShortVersionString"], expected[1])
+        self.assertEqual(
+            info["CFBundleShortVersionString"],
+            "0.0.0" if expected[1] == "dev" else expected[1],
+        )
         self.assertEqual(
             info["CFBundleVersion"], info["CFBundleShortVersionString"]
         )

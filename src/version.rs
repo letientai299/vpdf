@@ -18,11 +18,18 @@ pub const BUILD: &str = if cfg!(feature = "bench-events") {
 pub const CHANGELOG: &str =
   include_str!(concat!(env!("OUT_DIR"), "/changelog.md"));
 
+/// Builds other than clean stable releases name their source.
+fn sourced() -> bool {
+  DIRTY != "false"
+    || VERSION == "dev"
+    || VERSION.contains('-')
+    || cfg!(feature = "bench-events")
+}
+
 pub fn text(terminal: bool) -> String {
   crate::manual::identity();
   let mut text = name(terminal);
-  if DIRTY != "false" || VERSION.contains('-') || cfg!(feature = "bench-events")
-  {
+  if sourced() {
     write!(text, "\nbuild-source {REVISION} {DIRTY} {PATCH}").unwrap();
   }
   if !CHANGELOG.is_empty() {
@@ -67,10 +74,7 @@ mod tests {
     for terminal in [true, false] {
       let text = super::text(terminal);
       assert_eq!(text.lines().next(), Some(super::name(terminal).as_str()));
-      if super::DIRTY != "false"
-        || super::VERSION.contains('-')
-        || cfg!(feature = "bench-events")
-      {
+      if super::sourced() {
         assert_eq!(
           text.lines().nth(1).unwrap(),
           format!(
