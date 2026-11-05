@@ -77,7 +77,9 @@ fn workers_wait_for_their_slot() -> Result<()> {
   assert!(!app.sidebars_deferred(), "queued loads let the loop sleep");
   drop(held);
   app.sidebar_updates()?;
-  assert!(app.annotations_loading());
+  // A fast worker may finish this pass.
+  assert!(!app.sidebar.slot.queued);
+  assert!(!app.sidebar.annotations.startable());
   loaded(&mut app)?;
   assert_eq!(app.annotation_rows().len(), 2);
   app.refresh_sidebars()?;
