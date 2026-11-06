@@ -485,6 +485,12 @@ class Publisher:
     def save(self):
         atomic_json(self.journal_path, self.journal)
 
+    def dimensions(self, scene):
+        # App scenes vary in size; others share their capture's.
+        if "dimensions" in scene:
+            return scene["dimensions"]
+        return self.manifest["captures"][scene["capture"]]["dimensions"]
+
     def local_asset(self, asset, allow_missing=False):
         scene = self.manifest["scenes"][asset["scene"]]
         if scene["capture"] not in self.manifest["captures"]:
@@ -506,10 +512,7 @@ class Publisher:
                 and record["sha256"] == scene["sha256"]
                 and record["capture"] == scene["capture"]
             ):
-                expected = scene.get(
-                    "dimensions",
-                    self.manifest["captures"][scene["capture"]]["dimensions"],
-                )
+                expected = self.dimensions(scene)
                 if record["metadata"]["dimensions"] != expected:
                     raise RuntimeError("Publication dimensions mismatch")
                 return None, scene, record["metadata"]
@@ -522,10 +525,7 @@ class Publisher:
         ):
             raise RuntimeError("Capture size mismatch or upload limit exceeded")
         info = metadata(path, asset["kind"])
-        expected = scene.get(
-            "dimensions",
-            self.manifest["captures"][scene["capture"]]["dimensions"],
-        )
+        expected = self.dimensions(scene)
         if info["dimensions"] != expected:
             raise RuntimeError("Capture dimensions mismatch")
         return path, scene, info

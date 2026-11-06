@@ -1205,14 +1205,715 @@
           "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
         }
       }
+    },
+    "d6de1b33f2427ad0": {
+      "captured_at": "2026-11-06T02:28:40Z",
+      "commit": "da20a4b9e92e35a210d485fe3babcf7f559c24c1",
+      "binary_version": "vpdf dev",
+      "build_source": {
+        "revision": "da20a4b9e92e35a210d485fe3babcf7f559c24c1",
+        "dirty": false,
+        "patch": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+      },
+      "build_profile": "release",
+      "binary_sha256": "c9f948bf3f2715edab16df27aa45c3af333e57b9b6383ed9e6b6ee98216a93c1",
+      "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1880",
+        "initial_window_height": "1000",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "capture": "Kitty screenshot API; graphics included; no resizing",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": {
+        "engine": "tesseract 5.5.4",
+        "language": "eng",
+        "input_has_embedded_text": false
+      },
+      "inputs": {
+        "book": {
+          "file": "book.pdf",
+          "sha256": "6033000bac3f9268ad75ee041bf8e5d9a3bc8a33bb156399cbd014918cb59f94"
+        },
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        },
+        "scan": {
+          "file": "scan.pdf",
+          "sha256": "cc591b48ea4989a72ef725f1d2fc8eb35ab556e8e24f1cc3db33ec56abc74e32"
+        }
+      }
+    },
+    "88bc2a4637ed5b32": {
+      "captured_at": "2026-11-06T02:30:02Z",
+      "commit": "da20a4b9e92e35a210d485fe3babcf7f559c24c1",
+      "binary_version": "vpdf dev",
+      "build_source": {
+        "revision": "da20a4b9e92e35a210d485fe3babcf7f559c24c1",
+        "dirty": false,
+        "patch": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+      },
+      "build_profile": "release",
+      "binary_sha256": "c9f948bf3f2715edab16df27aa45c3af333e57b9b6383ed9e6b6ee98216a93c1",
+      "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1880",
+        "initial_window_height": "1000",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "capture": "ScreenCaptureKit desktop-independent window; visible Kitty; no activation",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": null,
+      "inputs": {
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        }
+      }
+    },
+    "b1b8564c9089011c": {
+      "captured_at": "2026-11-06T04:38:29Z",
+      "commit": "da20a4b9e92e35a210d485fe3babcf7f559c24c1",
+      "binary_version": "vpdf dev",
+      "build_source": {
+        "revision": "da20a4b9e92e35a210d485fe3babcf7f559c24c1",
+        "dirty": false,
+        "patch": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+      },
+      "build_profile": "release",
+      "binary_sha256": "c9f948bf3f2715edab16df27aa45c3af333e57b9b6383ed9e6b6ee98216a93c1",
+      "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1880",
+        "initial_window_height": "1000",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "capture": "Kitty screenshot API; graphics included; no resizing",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": null,
+      "inputs": {
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        }
+      }
+    },
+    "217391383ed613bd": {
+      "captured_at": "2026-11-06T04:51:27Z",
+      "commit": "da20a4b9e92e35a210d485fe3babcf7f559c24c1",
+      "binary_version": "vpdf dev",
+      "build_source": {
+        "revision": "da20a4b9e92e35a210d485fe3babcf7f559c24c1",
+        "dirty": false,
+        "patch": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+      },
+      "build_profile": "release",
+      "binary_sha256": "c9f948bf3f2715edab16df27aa45c3af333e57b9b6383ed9e6b6ee98216a93c1",
+      "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1880",
+        "initial_window_height": "1000",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "capture": "Kitty screenshot API; graphics included; no resizing",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": null,
+      "inputs": {
+        "chinese": {
+          "file": "chinese.pdf",
+          "sha256": "387113cf0dc2bc501d5fb77e681666f203f34e35f452fa9bd1f5b00ffe5bbc8e"
+        },
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        },
+        "vietnamese": {
+          "file": "vietnamese.pdf",
+          "sha256": "5ed2b5f73b6543283c8637e83e0d3ce7ef10b1050fcb0f190b945c8530be6195"
+        }
+      }
+    },
+    "49fc9fe3670c97d8": {
+      "captured_at": "2026-11-06T04:52:47Z",
+      "commit": "da20a4b9e92e35a210d485fe3babcf7f559c24c1",
+      "binary_version": "vpdf dev",
+      "build_source": {
+        "revision": "da20a4b9e92e35a210d485fe3babcf7f559c24c1",
+        "dirty": false,
+        "patch": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+      },
+      "build_profile": "release",
+      "binary_sha256": "c9f948bf3f2715edab16df27aa45c3af333e57b9b6383ed9e6b6ee98216a93c1",
+      "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1880",
+        "initial_window_height": "1000",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "capture": "Kitty screenshot API; graphics included; no resizing",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": null,
+      "inputs": {
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        }
+      }
+    },
+    "afeb656e66fbc54b": {
+      "captured_at": "2026-11-06T04:58:42Z",
+      "commit": "da20a4b9e92e35a210d485fe3babcf7f559c24c1",
+      "binary_version": "vpdf dev",
+      "build_source": {
+        "revision": "da20a4b9e92e35a210d485fe3babcf7f559c24c1",
+        "dirty": false,
+        "patch": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+      },
+      "build_profile": "release",
+      "binary_sha256": "c9f948bf3f2715edab16df27aa45c3af333e57b9b6383ed9e6b6ee98216a93c1",
+      "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1880",
+        "initial_window_height": "1000",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "capture": "Kitty screenshot API; graphics included; no resizing",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": null,
+      "inputs": {
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        }
+      }
+    },
+    "46c745fb091a00ff": {
+      "captured_at": "2026-11-06T05:21:41Z",
+      "commit": "9dd20397e0c4cd7f9f42ed0784a5e50400878373",
+      "binary_version": "vpdf dev",
+      "build_source": {
+        "revision": "9dd20397e0c4cd7f9f42ed0784a5e50400878373",
+        "dirty": false,
+        "patch": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+      },
+      "build_profile": "release",
+      "binary_sha256": "1a7eb5e4e1ba9045ce45e567643fd4436ae21b23a4d82f14792428053c5c0c63",
+      "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1880",
+        "initial_window_height": "1000",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "capture": "Kitty screenshot API; graphics included; no resizing",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": null,
+      "inputs": {
+        "chinese": {
+          "file": "chinese.pdf",
+          "sha256": "387113cf0dc2bc501d5fb77e681666f203f34e35f452fa9bd1f5b00ffe5bbc8e"
+        }
+      }
+    },
+    "9df946c62ee0352e": {
+      "captured_at": "2026-11-06T05:30:17Z",
+      "commit": "0ba7fbe0cb84fd8c8dabb298f5dd069264efc289",
+      "binary_version": "vpdf dev",
+      "build_source": {
+        "revision": "0ba7fbe0cb84fd8c8dabb298f5dd069264efc289",
+        "dirty": true,
+        "patch": "93f1d55e1303154edfc2e4766cee632486f5458f"
+      },
+      "build_profile": "release",
+      "binary_sha256": "69cf1ca61a68d2d5c3ac42481ef7fa14d90006f362b96d79b0d994d895e44499",
+      "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1880",
+        "initial_window_height": "1000",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "capture": "Kitty screenshot API; graphics included; no resizing",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": null,
+      "inputs": {
+        "chinese": {
+          "file": "chinese.pdf",
+          "sha256": "387113cf0dc2bc501d5fb77e681666f203f34e35f452fa9bd1f5b00ffe5bbc8e"
+        }
+      }
+    },
+    "e951a0e4add33a39": {
+      "captured_at": "2026-11-06T08:27:18Z",
+      "commit": "0ba7fbe0cb84fd8c8dabb298f5dd069264efc289",
+      "binary_version": "vpdf dev",
+      "build_source": {
+        "revision": "0ba7fbe0cb84fd8c8dabb298f5dd069264efc289",
+        "dirty": true,
+        "patch": "93f1d55e1303154edfc2e4766cee632486f5458f"
+      },
+      "build_profile": "release",
+      "binary_sha256": "69cf1ca61a68d2d5c3ac42481ef7fa14d90006f362b96d79b0d994d895e44499",
+      "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1880",
+        "initial_window_height": "1000",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "capture": "ScreenCaptureKit desktop-independent window; visible Kitty; no activation",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": null,
+      "inputs": {
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        }
+      }
+    },
+    "c58d179a735e50fc": {
+      "captured_at": "2026-11-06T08:27:46Z",
+      "commit": "0ba7fbe0cb84fd8c8dabb298f5dd069264efc289",
+      "binary_version": "vpdf dev",
+      "build_source": {
+        "revision": "0ba7fbe0cb84fd8c8dabb298f5dd069264efc289",
+        "dirty": true,
+        "patch": "93f1d55e1303154edfc2e4766cee632486f5458f"
+      },
+      "build_profile": "release",
+      "binary_sha256": "69cf1ca61a68d2d5c3ac42481ef7fa14d90006f362b96d79b0d994d895e44499",
+      "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1880",
+        "initial_window_height": "1000",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "capture": "ScreenCaptureKit desktop-independent window; visible Kitty; no activation",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": null,
+      "inputs": {
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        }
+      }
+    },
+    "88bbb8ea0a9be725": {
+      "captured_at": "2026-11-06T08:28:21Z",
+      "commit": "fd68c004440c387867b8c99b8a4c2af0f5bcaf8b",
+      "binary_version": "vpdf-gui dev [bench-events]",
+      "build_source": {
+        "revision": "fd68c004440c387867b8c99b8a4c2af0f5bcaf8b",
+        "dirty": true,
+        "patch": "acd9eff2c625878a664aa3fa421b1fa536a922cd"
+      },
+      "build_profile": "app",
+      "binary_sha256": "f21c110cfdac219f8e060c01038424d8c0aa0ee15d0ac3579c2898c60cce8237",
+      "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "window_size": [
+        1600,
+        900
+      ],
+      "capture": "screencapture -l window; no shadow; no activation",
+      "cache_conditions": "Fresh app, private saved state, VPDF_CACHE=off",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "inputs": {
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        }
+      }
+    },
+    "437592546aa9f62e": {
+      "captured_at": "2026-11-06T08:28:26Z",
+      "commit": "fd68c004440c387867b8c99b8a4c2af0f5bcaf8b",
+      "binary_version": "vpdf-gui dev [bench-events]",
+      "build_source": {
+        "revision": "fd68c004440c387867b8c99b8a4c2af0f5bcaf8b",
+        "dirty": true,
+        "patch": "acd9eff2c625878a664aa3fa421b1fa536a922cd"
+      },
+      "build_profile": "app",
+      "binary_sha256": "f21c110cfdac219f8e060c01038424d8c0aa0ee15d0ac3579c2898c60cce8237",
+      "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "window_size": [
+        1600,
+        900
+      ],
+      "capture": "screencapture -l window; no shadow; no activation",
+      "cache_conditions": "Fresh app, private saved state, VPDF_CACHE=off",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "inputs": {
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        }
+      }
+    },
+    "588b55a3f772cc2a": {
+      "captured_at": "2026-11-06T15:40:02Z",
+      "commit": "f61b8a4648229ad2519e92d533a4ab8a8179122c",
+      "binary_version": "vpdf dev",
+      "build_source": {
+        "revision": "f61b8a4648229ad2519e92d533a4ab8a8179122c",
+        "dirty": false,
+        "patch": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+      },
+      "build_profile": "release",
+      "binary_sha256": "52ca8cf9222c8025605b30ed7539068d8eb42f5f84c0475fbb2381b15d9fdc5e",
+      "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+      "machine": "Apple M5 Pro",
+      "kitty": "kitty 0.49.1 created by Kovid Goyal",
+      "kitty_options": {
+        "allow_remote_control": "socket-only",
+        "initial_window_width": "1880",
+        "initial_window_height": "1000",
+        "remember_window_size": "no",
+        "confirm_os_window_close": "0",
+        "macos_quit_when_last_window_closed": "yes",
+        "hide_window_decorations": "yes",
+        "tab_bar_style": "hidden",
+        "window_padding_width": "0",
+        "font_family": "monospace",
+        "font_size": "16.25",
+        "cursor_blink_interval": "0",
+        "background": "#181b24",
+        "foreground": "#d8dee9",
+        "color0": "#20242f",
+        "color1": "#bf616a",
+        "color2": "#a3be8c",
+        "color3": "#ebcb8b",
+        "color4": "#81a1c1",
+        "color5": "#b48ead",
+        "color6": "#88c0d0",
+        "color7": "#e5e9f0",
+        "color8": "#4c566a",
+        "color12": "#88c0d0"
+      },
+      "font_scale": 1.25,
+      "base_font_points": 13,
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "capture": "Kitty screenshot API; graphics included; no resizing",
+      "cache_conditions": "Fresh reader, private saved state and empty content cache per scene",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "ocr": null,
+      "inputs": {
+        "paper": {
+          "file": "paper.pdf",
+          "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+        }
+      }
     }
   },
   "scenes": {
     "overview": {
       "image": "overview.jpg",
       "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "5c50c2a1276b4c51a11c785b6aeadcbf50e6bcbf94697da8996180150736a49a",
-      "bytes": 345121,
+      "sha256": "215daa6cc33fc5885b2247bad65bc0acfb280a793dc1798997c1c18af0b6d902",
+      "bytes": 346183,
       "start_page": 2,
       "documents": [
         "paper",
@@ -1295,7 +1996,7 @@
         ],
         [
           "wait",
-          "VISUAL"
+          " V  1:scan.pdf"
         ],
         [
           "key",
@@ -1358,27 +2059,27 @@
         "launch": "open -g -n; hidden Kitty; live place helper",
         "front": [
           "net.kovidgoyal.kitty",
-          1544
+          13293
         ],
-        "checks": 67,
+        "checks": 63,
         "fully_visible": true,
         "window": {
-          "X": 30,
+          "X": 3860,
           "Height": 1000,
-          "Y": 80,
+          "Y": 40,
           "Width": 1880
         },
         "task_received_focus": false,
         "foreground_states": [
           [
             "net.kovidgoyal.kitty",
-            1544
+            13293
           ]
         ]
       },
       "resolved_targets": [],
       "ocr_mode": "explicit request",
-      "capture": "abef9234b9b7ac6e"
+      "capture": "d6de1b33f2427ad0"
     },
     "help": {
       "image": "help.jpg",
@@ -1503,8 +2204,8 @@
     "preview": {
       "image": "preview.jpg",
       "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "1fd7042a6934a206fbb0f21a2940e63f016690c7df4a3a1b6b169d2ef61964de",
-      "bytes": 205075,
+      "sha256": "8387e2f2ef86d70db6a35b8402a3eb04237cf788d666b9bb30abe6c5e2282b03",
+      "bytes": 211475,
       "start_page": 2,
       "documents": [
         "paper"
@@ -1537,28 +2238,32 @@
       "window_checks": {
         "launch": "open -g -n; hidden Kitty; live place helper",
         "front": [
-          "net.kovidgoyal.kitty",
-          1544
+          "com.google.Chrome",
+          834
         ],
-        "checks": 131,
+        "checks": 84,
         "fully_visible": true,
         "window": {
-          "X": 30,
+          "X": 3860,
           "Height": 1000,
-          "Y": 80,
+          "Y": 40,
           "Width": 1880
         },
         "task_received_focus": false,
         "foreground_states": [
           [
             "net.kovidgoyal.kitty",
-            1544
+            13293
+          ],
+          [
+            "com.google.Chrome",
+            834
           ]
         ]
       },
       "resolved_targets": [],
       "ocr_mode": null,
-      "capture": "abef9234b9b7ac6e"
+      "capture": "d6de1b33f2427ad0"
     },
     "figure": {
       "image": "figure.jpg",
@@ -1719,8 +2424,8 @@
     "mouse-hints": {
       "image": "mouse-hints.jpg",
       "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
-      "sha256": "b04f5377cc3db5ec7515468a86600a348869705d91e0fb1c908ea0c43fb0b9c0",
-      "bytes": 223965,
+      "sha256": "71be673394fe5b00899482a323100768fbdb4387e178e20850bb0af300316d33",
+      "bytes": 222541,
       "start_page": 2,
       "documents": [
         "paper"
@@ -1749,28 +2454,28 @@
       "window_checks": {
         "launch": "open -g -n; hidden Kitty; live place helper",
         "front": [
-          "net.kovidgoyal.kitty",
-          1544
+          "com.google.Chrome",
+          834
         ],
-        "checks": 197,
+        "checks": 34,
         "fully_visible": true,
         "window": {
-          "X": 30,
+          "X": 3860,
           "Height": 1000,
-          "Y": 80,
+          "Y": 40,
           "Width": 1880
         },
         "task_received_focus": false,
         "foreground_states": [
           [
-            "net.kovidgoyal.kitty",
-            1544
+            "com.google.Chrome",
+            834
           ]
         ]
       },
       "resolved_targets": [],
       "ocr_mode": null,
-      "capture": "abef9234b9b7ac6e"
+      "capture": "588b55a3f772cc2a"
     },
     "mouse-region": {
       "image": "mouse-region.jpg",
@@ -2663,8 +3368,8 @@
     "inspect-reference": {
       "kind": "video",
       "image": "inspect-reference.mp4",
-      "sha256": "5dcd1110723bfa58edc146bd225e92cfea32da813ec48f578ae22671d8dd6653",
-      "bytes": 1414617,
+      "sha256": "043c13aa8ad55e9f5a229aa14a49a7e835ad6ed4eb4935b8c9106ae44a958976",
+      "bytes": 1443777,
       "documents": [
         "paper"
       ],
@@ -2673,7 +3378,7 @@
         1880,
         1112
       ],
-      "duration": 27.766667,
+      "duration": 27.033333,
       "frame_rate": "30/1",
       "pixel_format": "yuv420p",
       "encoding": {
@@ -2685,16 +3390,16 @@
         "edits": "No cuts or time compression; idle frames retained; constant-rate encoding"
       },
       "recording": {
-        "actual_captured_fps": 29.40441157232117,
-        "duration": 27.760416000000077,
-        "first_frame_monotonic": 2285.51394175,
+        "actual_captured_fps": 29.357450328268968,
+        "duration": 27.02935870899819,
+        "first_frame_monotonic": 124245.595500916,
         "frame_status_counts": {
           "0": 22,
-          "1": 795
+          "1": 772
         },
-        "frames": 817,
+        "frames": 794,
         "requested_fps": 30,
-        "source_delivery_gap_slots": 1,
+        "source_delivery_gap_slots": 2,
         "source_drop_note": "Source drop counts are not exposed by ScreenCaptureKit.",
         "source_dropped_frames": null,
         "writer_dropped_frames": 0,
@@ -2703,36 +3408,36 @@
             "phase": "setup",
             "kind": "text",
             "value": "zc=/[13]\r",
-            "input_monotonic_ns": 2283306168000,
-            "completed_monotonic_ns": 2283319981250
+            "input_monotonic_ns": 124243206486250,
+            "completed_monotonic_ns": 124243222713166
           },
           {
             "phase": "setup",
             "kind": "wait",
             "value": "matches",
-            "input_monotonic_ns": 2283625022083,
-            "completed_monotonic_ns": 2283639475750
+            "input_monotonic_ns": 124243523586750,
+            "completed_monotonic_ns": 124243538750333
           },
           {
             "phase": "setup",
             "kind": "text",
             "value": ":nohlsearch\r",
-            "input_monotonic_ns": 2283944541833,
-            "completed_monotonic_ns": 2283964545916
+            "input_monotonic_ns": 124243840963750,
+            "completed_monotonic_ns": 124243855639750
           },
           {
             "phase": "setup",
             "kind": "pause",
             "value": 1,
-            "input_monotonic_ns": 2284269628750,
-            "completed_monotonic_ns": 2285271270416
+            "input_monotonic_ns": 124244157300250,
+            "completed_monotonic_ns": 124245158963000
           },
           {
             "phase": "demo",
             "kind": "text",
             "value": "i",
-            "input_monotonic_ns": 2287518988125,
-            "completed_monotonic_ns": 2287534012875,
+            "input_monotonic_ns": 124247600590916,
+            "completed_monotonic_ns": 124247620627250,
             "label": "i",
             "caption": "Place the glyph cursor.",
             "planned_seconds": 2
@@ -2741,8 +3446,8 @@
             "phase": "demo",
             "kind": "text",
             "value": "l",
-            "input_monotonic_ns": 2289518990083,
-            "completed_monotonic_ns": 2289537510666,
+            "input_monotonic_ns": 124249600545791,
+            "completed_monotonic_ns": 124249621335416,
             "label": "l",
             "caption": "Move onto the citation.",
             "planned_seconds": 4
@@ -2751,8 +3456,8 @@
             "phase": "demo",
             "kind": "text",
             "value": "K",
-            "input_monotonic_ns": 2291518964958,
-            "completed_monotonic_ns": 2291539357250,
+            "input_monotonic_ns": 124251600572875,
+            "completed_monotonic_ns": 124251632330541,
             "label": "K",
             "caption": "Preview the reference.",
             "planned_seconds": 6
@@ -2761,15 +3466,15 @@
             "phase": "assert",
             "kind": "wait",
             "value": "\u250c",
-            "input_monotonic_ns": 2291539378125,
-            "completed_monotonic_ns": 2291780765916
+            "input_monotonic_ns": 124251632357125,
+            "completed_monotonic_ns": 124251662020416
           },
           {
             "phase": "demo",
             "kind": "text",
             "value": "j",
-            "input_monotonic_ns": 2295518987458,
-            "completed_monotonic_ns": 2295538829833,
+            "input_monotonic_ns": 124255600546083,
+            "completed_monotonic_ns": 124255629733291,
             "label": "j",
             "caption": "Scroll the preview.",
             "planned_seconds": 10
@@ -2778,8 +3483,8 @@
             "phase": "demo",
             "kind": "text",
             "value": "k",
-            "input_monotonic_ns": 2297518976666,
-            "completed_monotonic_ns": 2297533459041,
+            "input_monotonic_ns": 124257600538375,
+            "completed_monotonic_ns": 124257629250916,
             "label": "k",
             "caption": "Scroll back.",
             "planned_seconds": 12
@@ -2788,8 +3493,8 @@
             "phase": "demo",
             "kind": "key",
             "value": "escape",
-            "input_monotonic_ns": 2300518989833,
-            "completed_monotonic_ns": 2300535659416,
+            "input_monotonic_ns": 124260600683458,
+            "completed_monotonic_ns": 124260629353125,
             "label": "Escape",
             "caption": "Close the preview.",
             "planned_seconds": 15
@@ -2798,8 +3503,8 @@
             "phase": "demo",
             "kind": "text",
             "value": "gd",
-            "input_monotonic_ns": 2303518980208,
-            "completed_monotonic_ns": 2303548274916,
+            "input_monotonic_ns": 124263600540791,
+            "completed_monotonic_ns": 124263631568250,
             "label": "g then d",
             "caption": "Resolve the reference.",
             "planned_seconds": 18
@@ -2808,41 +3513,37 @@
             "phase": "demo",
             "kind": "key",
             "value": "ctrl+o",
-            "input_monotonic_ns": 2307516082791,
-            "completed_monotonic_ns": 2307534668125,
+            "input_monotonic_ns": 124267600041583,
+            "completed_monotonic_ns": 124267630571833,
             "label": "Ctrl-o",
             "caption": "Return to the citation.",
             "planned_seconds": 22
           }
         ],
-        "first_frame_monotonic_ns": 2285513941750,
+        "first_frame_monotonic_ns": 124245595500916,
         "window_checks": {
           "launch": "open -g -n; hidden Kitty; live place helper",
           "front": [
-            "net.kovidgoyal.kitty",
-            1544
+            "com.microsoft.Excel",
+            7846
           ],
-          "checks": 127,
+          "checks": 125,
           "fully_visible": true,
           "window": {
             "X": 3860,
             "Height": 1000,
-            "Y": 31,
+            "Y": 40,
             "Width": 1880
           },
           "task_received_focus": false,
           "foreground_states": [
             [
               "net.kovidgoyal.kitty",
-              1544
+              13293
             ],
             [
-              "io.github.letientai299.vpdf",
-              36169
-            ],
-            [
-              "net.kovidgoyal.kitty",
-              1544
+              "com.microsoft.Excel",
+              7846
             ]
           ]
         },
@@ -2850,16 +3551,16 @@
           1880,
           1000
         ],
-        "source_sha256": "10acf5a170a66e464e932ffc1f04dac1b86528798454affe728fd41cb530f98f",
-        "source_bytes": 13217432,
+        "source_sha256": "f5e4cca9c82dbf19555c98f6e1043d166f549ac1683d14dc07d4586b71635d8d",
+        "source_bytes": 13153471,
         "source_media": {
           "dimensions": [
             1880,
             1000
           ],
           "codec": "h264",
-          "duration": 27.76,
-          "frame_rate": "122700/4169",
+          "duration": 27.03,
+          "frame_rate": "238500/8119",
           "pixel_format": "yuv420p"
         }
       },
@@ -2868,65 +3569,65 @@
           "start": 0.0,
           "label": "",
           "caption": "Inspect a reference",
-          "end": 2.005046375
+          "end": 2.00509
         },
         {
-          "start": 2.005046375,
+          "start": 2.00509,
           "label": "i",
           "caption": "Place the glyph cursor.",
-          "end": 4.005048333
+          "end": 4.005044875
         },
         {
-          "start": 4.005048333,
+          "start": 4.005044875,
           "label": "l",
           "caption": "Move onto the citation.",
-          "end": 6.005023208
+          "end": 6.005071959
         },
         {
-          "start": 6.005023208,
+          "start": 6.005071959,
           "label": "K",
           "caption": "Preview the reference.",
-          "end": 10.005045708
+          "end": 10.005045167
         },
         {
-          "start": 10.005045708,
+          "start": 10.005045167,
           "label": "j",
           "caption": "Scroll the preview.",
-          "end": 12.005034916
+          "end": 12.005037459
         },
         {
-          "start": 12.005034916,
+          "start": 12.005037459,
           "label": "k",
           "caption": "Scroll back.",
-          "end": 15.005048083
+          "end": 15.005182542
         },
         {
-          "start": 15.005048083,
+          "start": 15.005182542,
           "label": "Escape",
           "caption": "Close the preview.",
-          "end": 18.005038458
+          "end": 18.005039875
         },
         {
-          "start": 18.005038458,
+          "start": 18.005039875,
           "label": "g then d",
           "caption": "Resolve the reference.",
-          "end": 22.002141041
+          "end": 22.004540667
         },
         {
-          "start": 22.002141041,
+          "start": 22.004540667,
           "label": "Ctrl-o",
           "caption": "Return to the citation.",
-          "end": 27.76
+          "end": 27.03
         }
       ],
       "overlay_font_sha256": "dc256e0b39c2a6fec947129d421fef41b8b429f58f9b6e5d1b148c87f775c1f6",
-      "capture": "9d6e4e754fd1895c"
+      "capture": "88bc2a4637ed5b32"
     },
     "inspect-reference-poster": {
       "kind": "poster",
       "image": "inspect-reference-poster.jpg",
-      "sha256": "a1ee947b5e85991c6344d0620c16b6cf7832d789f0e9e795ab06bee135e4ea88",
-      "bytes": 206613,
+      "sha256": "d8b61a8fa56e3e10774858e9ed06db46eb9d7d18cfdd1526200063e7def8842f",
+      "bytes": 212676,
       "documents": [
         "paper"
       ],
@@ -2935,10 +3636,10 @@
         1112
       ],
       "video": "inspect-reference",
-      "video_sha256": "5dcd1110723bfa58edc146bd225e92cfea32da813ec48f578ae22671d8dd6653",
+      "video_sha256": "043c13aa8ad55e9f5a229aa14a49a7e835ad6ed4eb4935b8c9106ae44a958976",
       "frame_seconds": 8,
       "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding; frame extracted from captioned video",
-      "capture": "9d6e4e754fd1895c"
+      "capture": "88bc2a4637ed5b32"
     },
     "compare-passages": {
       "kind": "video",
@@ -4024,6 +4725,1149 @@
       "frame_seconds": 19.5,
       "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding; frame extracted from captioned video",
       "capture": "1e103fafb05bb9d7"
+    },
+    "recolor": {
+      "image": "recolor.jpg",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "37cf8e781f73f567e9724c118b6753d0c70bce58721d3aa4d81aac71c1a14198",
+      "bytes": 254996,
+      "start_page": 3,
+      "documents": [
+        "paper"
+      ],
+      "launch_documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          "3+20"
+        ],
+        [
+          "key",
+          "ctrl+e"
+        ],
+        [
+          "text",
+          ":vsplit\r:vsplit\r:split\r"
+        ],
+        [
+          "key",
+          "ctrl+w"
+        ],
+        [
+          "text",
+          "l"
+        ],
+        [
+          "text",
+          ":split\r"
+        ],
+        [
+          "key",
+          "ctrl+w"
+        ],
+        [
+          "text",
+          "l"
+        ],
+        [
+          "text",
+          ":split\r"
+        ],
+        [
+          "key",
+          "ctrl+w"
+        ],
+        [
+          "text",
+          "="
+        ],
+        [
+          "text",
+          ":recolor sepia 100\r"
+        ],
+        [
+          "key",
+          "ctrl+w"
+        ],
+        [
+          "text",
+          "h"
+        ],
+        [
+          "text",
+          ":recolor sepia 60\r"
+        ],
+        [
+          "key",
+          "ctrl+w"
+        ],
+        [
+          "text",
+          "h"
+        ],
+        [
+          "text",
+          ":recolor sepia 30\r"
+        ],
+        [
+          "key",
+          "ctrl+w"
+        ],
+        [
+          "text",
+          "j"
+        ],
+        [
+          "text",
+          ":recolor dark 30\r"
+        ],
+        [
+          "key",
+          "ctrl+w"
+        ],
+        [
+          "text",
+          "l"
+        ],
+        [
+          "text",
+          ":recolor dark 60\r"
+        ],
+        [
+          "key",
+          "ctrl+w"
+        ],
+        [
+          "text",
+          "l"
+        ],
+        [
+          "text",
+          ":recolor dark 100\r"
+        ],
+        [
+          "pause",
+          2
+        ]
+      ],
+      "config": "[appearance.opacity]\ninactive = 0\n",
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          13293
+        ],
+        "checks": 68,
+        "fully_visible": true,
+        "window": {
+          "X": 3860,
+          "Height": 1000,
+          "Y": 40,
+          "Width": 1880
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            13293
+          ]
+        ]
+      },
+      "resolved_targets": [],
+      "ocr_mode": null,
+      "capture": "b1b8564c9089011c"
+    },
+    "home": {
+      "image": "home.jpg",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "02021c73202f38e15311f83a76b5c35fbe193aeb4b3f2254b6afb4f559987e0c",
+      "bytes": 37615,
+      "start_page": 1,
+      "documents": [],
+      "launch_documents": [],
+      "steps": [],
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          13293
+        ],
+        "checks": 25,
+        "fully_visible": true,
+        "window": {
+          "X": 3860,
+          "Height": 1000,
+          "Y": 40,
+          "Width": 1880
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            13293
+          ]
+        ]
+      },
+      "resolved_targets": [],
+      "ocr_mode": null,
+      "capture": "217391383ed613bd"
+    },
+    "clues": {
+      "image": "clues.jpg",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "c576d0e2114bffa33e7a40d9e4b2e5b472734cc8cf7aa6d29dfb1ebeb73f117d",
+      "bytes": 224927,
+      "start_page": 2,
+      "documents": [
+        "paper"
+      ],
+      "launch_documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          "g"
+        ],
+        [
+          "wait",
+          "table of contents"
+        ]
+      ],
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "com.google.Chrome",
+          834
+        ],
+        "checks": 29,
+        "fully_visible": true,
+        "window": {
+          "X": 3860,
+          "Height": 1000,
+          "Y": 40,
+          "Width": 1880
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "com.google.Chrome",
+            834
+          ]
+        ]
+      },
+      "resolved_targets": [],
+      "ocr_mode": null,
+      "capture": "afeb656e66fbc54b"
+    },
+    "contents": {
+      "image": "contents.jpg",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "278949e4072f23cd1e51eace8e521af663d753c18ce67783d0a34cafa72a42b5",
+      "bytes": 170830,
+      "start_page": 5,
+      "documents": [
+        "paper"
+      ],
+      "launch_documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          "go"
+        ],
+        [
+          "wait",
+          "CONTENTS"
+        ],
+        [
+          "text",
+          "zMl"
+        ],
+        [
+          "pause",
+          1
+        ]
+      ],
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          13293
+        ],
+        "checks": 36,
+        "fully_visible": true,
+        "window": {
+          "X": 3860,
+          "Height": 1000,
+          "Y": 40,
+          "Width": 1880
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            13293
+          ]
+        ]
+      },
+      "resolved_targets": [],
+      "ocr_mode": null,
+      "capture": "49fc9fe3670c97d8"
+    },
+    "scrollbar": {
+      "image": "scrollbar.jpg",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "5055078f357735b4e338bbecf49c232d863632efcfe1183d54fdb8ed9262b550",
+      "bytes": 222091,
+      "start_page": 2,
+      "documents": [
+        "paper"
+      ],
+      "launch_documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          "/attention\r"
+        ],
+        [
+          "wait",
+          "matches"
+        ],
+        [
+          "mouse",
+          [
+            "move",
+            2556,
+            115
+          ]
+        ],
+        [
+          "mouse",
+          [
+            "left-down",
+            2556,
+            115
+          ]
+        ],
+        [
+          "mouse",
+          [
+            "left-drag",
+            2556,
+            700
+          ]
+        ],
+        [
+          "wait",
+          "p. 8"
+        ]
+      ],
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "com.google.Chrome",
+          834
+        ],
+        "checks": 73,
+        "fully_visible": true,
+        "window": {
+          "X": 3860,
+          "Height": 1000,
+          "Y": 40,
+          "Width": 1880
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "com.google.Chrome",
+            834
+          ]
+        ]
+      },
+      "resolved_targets": [],
+      "ocr_mode": null,
+      "capture": "afeb656e66fbc54b"
+    },
+    "hints": {
+      "image": "hints.jpg",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "09e386101c2c3708e65c67111daac3c59fb4958d0c27bd719e3c6a4392d73eb5",
+      "bytes": 228262,
+      "start_page": 2,
+      "documents": [
+        "paper"
+      ],
+      "launch_documents": [
+        "paper"
+      ],
+      "steps": [
+        [
+          "text",
+          ":links on\r"
+        ],
+        [
+          "text",
+          "f"
+        ],
+        [
+          "wait",
+          "HINT"
+        ]
+      ],
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "com.google.Chrome",
+          834
+        ],
+        "checks": 49,
+        "fully_visible": true,
+        "window": {
+          "X": 3860,
+          "Height": 1000,
+          "Y": 40,
+          "Width": 1880
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "com.google.Chrome",
+            834
+          ]
+        ]
+      },
+      "resolved_targets": [],
+      "ocr_mode": null,
+      "capture": "afeb656e66fbc54b"
+    },
+    "search-vi": {
+      "image": "search-vi.jpg",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "091c8e1f858671dec65abb0f7117d22c682d77e72543cf3224b11b83892a37d7",
+      "bytes": 293244,
+      "start_page": 13,
+      "documents": [
+        "vietnamese"
+      ],
+      "launch_documents": [
+        "vietnamese"
+      ],
+      "steps": [
+        [
+          "text",
+          "/kinh te\r"
+        ],
+        [
+          "wait",
+          "matches"
+        ],
+        [
+          "text",
+          "gs"
+        ],
+        [
+          "wait",
+          "RESULTS"
+        ]
+      ],
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "net.kovidgoyal.kitty",
+          13293
+        ],
+        "checks": 144,
+        "fully_visible": true,
+        "window": {
+          "X": 3860,
+          "Height": 1000,
+          "Y": 40,
+          "Width": 1880
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "net.kovidgoyal.kitty",
+            13293
+          ]
+        ]
+      },
+      "resolved_targets": [],
+      "ocr_mode": null,
+      "capture": "217391383ed613bd"
+    },
+    "search-zh": {
+      "image": "search-zh.jpg",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "87d4ba756fcdf0c940163bf0c87bef3acd59c8a6c61eea845cc1b1ce51d2dc7e",
+      "bytes": 393398,
+      "start_page": 16,
+      "documents": [
+        "chinese"
+      ],
+      "launch_documents": [
+        "chinese"
+      ],
+      "steps": [
+        [
+          "text",
+          "/\u7ecf\u6d4e\r"
+        ],
+        [
+          "wait",
+          "matches"
+        ],
+        [
+          "text",
+          "gs"
+        ],
+        [
+          "wait",
+          "RESULTS"
+        ]
+      ],
+      "dimensions": [
+        1880,
+        1000
+      ],
+      "window_checks": {
+        "launch": "open -g -n; hidden Kitty; live place helper",
+        "front": [
+          "com.google.Chrome",
+          834
+        ],
+        "checks": 34,
+        "fully_visible": true,
+        "window": {
+          "X": 3860,
+          "Height": 1000,
+          "Y": 40,
+          "Width": 1880
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "com.google.Chrome",
+            834
+          ]
+        ]
+      },
+      "resolved_targets": [],
+      "ocr_mode": null,
+      "capture": "9df946c62ee0352e"
+    },
+    "follow-hints": {
+      "kind": "video",
+      "image": "follow-hints.mp4",
+      "sha256": "6f5430f7df1e5e3c676a687e30be9e51457938f678e7be25217d03edda41f573",
+      "bytes": 935802,
+      "documents": [
+        "paper"
+      ],
+      "start_page": 2,
+      "dimensions": [
+        1880,
+        1112
+      ],
+      "duration": 21.4,
+      "frame_rate": "30/1",
+      "pixel_format": "yuv420p",
+      "encoding": {
+        "codec": "H.264",
+        "encoder": "libx264",
+        "crf": 20,
+        "encoded_fps": 30,
+        "overlay": "FFmpeg overlay; timestamped ImageMagick key strip outside viewport",
+        "edits": "No cuts or time compression; idle frames retained; constant-rate encoding"
+      },
+      "recording": {
+        "actual_captured_fps": 27.309778913999605,
+        "duration": 21.4023510000261,
+        "first_frame_monotonic": 141438.705220916,
+        "frame_status_counts": {
+          "0": 19,
+          "1": 566
+        },
+        "frames": 585,
+        "requested_fps": 30,
+        "source_delivery_gap_slots": 45,
+        "source_drop_note": "Source drop counts are not exposed by ScreenCaptureKit.",
+        "source_dropped_frames": null,
+        "writer_dropped_frames": 0,
+        "input_timeline": [
+          {
+            "phase": "setup",
+            "kind": "pause",
+            "value": 1,
+            "input_monotonic_ns": 141437316449208,
+            "completed_monotonic_ns": 141438316891916
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "f",
+            "input_monotonic_ns": 141440705405791,
+            "completed_monotonic_ns": 141440730525041,
+            "label": "f",
+            "caption": "Label visible links.",
+            "planned_seconds": 2
+          },
+          {
+            "phase": "assert",
+            "kind": "wait",
+            "value": "HINT",
+            "input_monotonic_ns": 141440730549875,
+            "completed_monotonic_ns": 141440748770833
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "a",
+            "input_monotonic_ns": 141443709287125,
+            "completed_monotonic_ns": 141443739245375,
+            "label": "a",
+            "caption": "Follow reference 13.",
+            "planned_seconds": 5
+          },
+          {
+            "phase": "assert",
+            "kind": "wait",
+            "value": "11/15 [11]",
+            "input_monotonic_ns": 141443739274291,
+            "completed_monotonic_ns": 141443786075666
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "yf",
+            "input_monotonic_ns": 141447709583916,
+            "completed_monotonic_ns": 141447733311583,
+            "label": "y then f",
+            "caption": "Label links to copy.",
+            "planned_seconds": 9
+          },
+          {
+            "phase": "assert",
+            "kind": "wait",
+            "value": "HINT",
+            "input_monotonic_ns": 141447733334083,
+            "completed_monotonic_ns": 141447758399000
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "a",
+            "input_monotonic_ns": 141450706362083,
+            "completed_monotonic_ns": 141450735458375,
+            "label": "a",
+            "caption": "Copy the arXiv address.",
+            "planned_seconds": 12
+          },
+          {
+            "phase": "assert",
+            "kind": "wait",
+            "value": "Copied link",
+            "input_monotonic_ns": 141450735490041,
+            "completed_monotonic_ns": 141450767408000
+          },
+          {
+            "phase": "demo",
+            "kind": "key",
+            "value": "ctrl+o",
+            "input_monotonic_ns": 141454709190541,
+            "completed_monotonic_ns": 141454727776875,
+            "label": "Ctrl-o",
+            "caption": "Return to the citation.",
+            "planned_seconds": 16
+          },
+          {
+            "phase": "assert",
+            "kind": "wait",
+            "value": "2/15 [2]",
+            "input_monotonic_ns": 141454727799916,
+            "completed_monotonic_ns": 141454749625583
+          }
+        ],
+        "first_frame_monotonic_ns": 141438705220916,
+        "window_checks": {
+          "launch": "open -g -n; hidden Kitty; live place helper",
+          "front": [
+            "net.kovidgoyal.kitty",
+            13293
+          ],
+          "checks": 101,
+          "fully_visible": true,
+          "window": {
+            "X": 3860,
+            "Height": 1000,
+            "Y": 40,
+            "Width": 1880
+          },
+          "task_received_focus": false,
+          "foreground_states": [
+            [
+              "net.kovidgoyal.kitty",
+              13293
+            ]
+          ]
+        },
+        "viewport": [
+          1880,
+          1000
+        ],
+        "source_sha256": "89361747d274f771e1916c9a1f2829d167b6a8e9f83d5d5b1454b14e98613495",
+        "source_bytes": 9270354,
+        "source_media": {
+          "dimensions": [
+            1880,
+            1000
+          ],
+          "codec": "h264",
+          "duration": 21.401667,
+          "frame_rate": "117200/4287",
+          "pixel_format": "yuv420p"
+        }
+      },
+      "overlay_segments": [
+        {
+          "start": 0.0,
+          "label": "",
+          "caption": "Follow link hints",
+          "end": 2.000184875
+        },
+        {
+          "start": 2.000184875,
+          "label": "f",
+          "caption": "Label visible links.",
+          "end": 5.004066209
+        },
+        {
+          "start": 5.004066209,
+          "label": "a",
+          "caption": "Follow reference 13.",
+          "end": 9.004363
+        },
+        {
+          "start": 9.004363,
+          "label": "y then f",
+          "caption": "Label links to copy.",
+          "end": 12.001141167
+        },
+        {
+          "start": 12.001141167,
+          "label": "a",
+          "caption": "Copy the arXiv address.",
+          "end": 16.003969625
+        },
+        {
+          "start": 16.003969625,
+          "label": "Ctrl-o",
+          "caption": "Return to the citation.",
+          "end": 21.401667
+        }
+      ],
+      "overlay_font_sha256": "dc256e0b39c2a6fec947129d421fef41b8b429f58f9b6e5d1b148c87f775c1f6",
+      "capture": "e951a0e4add33a39"
+    },
+    "follow-hints-poster": {
+      "kind": "poster",
+      "image": "follow-hints-poster.jpg",
+      "sha256": "092bff74fba33e26ead583fb05a700f785d92367df3ddd49f2200adec56774a5",
+      "bytes": 230147,
+      "documents": [
+        "paper"
+      ],
+      "dimensions": [
+        1880,
+        1112
+      ],
+      "video": "follow-hints",
+      "video_sha256": "6f5430f7df1e5e3c676a687e30be9e51457938f678e7be25217d03edda41f573",
+      "frame_seconds": 3,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding; frame extracted from captioned video",
+      "capture": "e951a0e4add33a39"
+    },
+    "contents-fold": {
+      "kind": "video",
+      "image": "contents-fold.mp4",
+      "sha256": "03102a9528727dd6d44b16da0d56d316b54e24a3c15994710c72800570b8a9d2",
+      "bytes": 857390,
+      "documents": [
+        "paper"
+      ],
+      "start_page": 5,
+      "dimensions": [
+        1880,
+        1112
+      ],
+      "duration": 23.133333,
+      "frame_rate": "30/1",
+      "pixel_format": "yuv420p",
+      "encoding": {
+        "codec": "H.264",
+        "encoder": "libx264",
+        "crf": 20,
+        "encoded_fps": 30,
+        "overlay": "FFmpeg overlay; timestamped ImageMagick key strip outside viewport",
+        "edits": "No cuts or time compression; idle frames retained; constant-rate encoding"
+      },
+      "recording": {
+        "actual_captured_fps": 27.827122744907953,
+        "duration": 23.127397709002253,
+        "first_frame_monotonic": 141466.732527791,
+        "frame_status_counts": {
+          "0": 25,
+          "1": 619
+        },
+        "frames": 644,
+        "requested_fps": 30,
+        "source_delivery_gap_slots": 34,
+        "source_drop_note": "Source drop counts are not exposed by ScreenCaptureKit.",
+        "source_dropped_frames": null,
+        "writer_dropped_frames": 0,
+        "input_timeline": [
+          {
+            "phase": "setup",
+            "kind": "pause",
+            "value": 1,
+            "input_monotonic_ns": 141465434434625,
+            "completed_monotonic_ns": 141466436779291
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "go",
+            "input_monotonic_ns": 141468733124375,
+            "completed_monotonic_ns": 141468769552166,
+            "label": "g then o",
+            "caption": "Open the contents.",
+            "planned_seconds": 2
+          },
+          {
+            "phase": "assert",
+            "kind": "wait",
+            "value": "CONTENTS",
+            "input_monotonic_ns": 141468769587208,
+            "completed_monotonic_ns": 141468805832875
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "zM",
+            "input_monotonic_ns": 141471733331625,
+            "completed_monotonic_ns": 141471763924125,
+            "label": "z then M",
+            "caption": "Collapse every branch.",
+            "planned_seconds": 5
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "2j",
+            "input_monotonic_ns": 141474732625666,
+            "completed_monotonic_ns": 141474773154291,
+            "label": "2 j",
+            "caption": "Select Training.",
+            "planned_seconds": 8
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "l",
+            "input_monotonic_ns": 141476735464250,
+            "completed_monotonic_ns": 141476774844666,
+            "label": "l",
+            "caption": "Open Training.",
+            "planned_seconds": 10
+          },
+          {
+            "phase": "demo",
+            "kind": "text",
+            "value": "3j",
+            "input_monotonic_ns": 141478737590833,
+            "completed_monotonic_ns": 141478780110375,
+            "label": "3 j",
+            "caption": "Select Optimizer.",
+            "planned_seconds": 12
+          },
+          {
+            "phase": "demo",
+            "kind": "key",
+            "value": "enter",
+            "input_monotonic_ns": 141481734144750,
+            "completed_monotonic_ns": 141481752567458,
+            "label": "Enter",
+            "caption": "Jump to the section.",
+            "planned_seconds": 15
+          },
+          {
+            "phase": "assert",
+            "kind": "wait",
+            "value": "7/15",
+            "input_monotonic_ns": 141481752590000,
+            "completed_monotonic_ns": 141481802274041
+          },
+          {
+            "phase": "demo",
+            "kind": "key",
+            "value": "ctrl+o",
+            "input_monotonic_ns": 141485734802416,
+            "completed_monotonic_ns": 141485760345750,
+            "label": "Ctrl-o",
+            "caption": "Return to the earlier page.",
+            "planned_seconds": 19
+          },
+          {
+            "phase": "assert",
+            "kind": "wait",
+            "value": "5/15",
+            "input_monotonic_ns": 141485760379208,
+            "completed_monotonic_ns": 141485783347708
+          }
+        ],
+        "first_frame_monotonic_ns": 141466732527791,
+        "window_checks": {
+          "launch": "open -g -n; hidden Kitty; live place helper",
+          "front": [
+            "com.google.Chrome",
+            834
+          ],
+          "checks": 105,
+          "fully_visible": true,
+          "window": {
+            "X": 3860,
+            "Height": 1000,
+            "Y": 40,
+            "Width": 1880
+          },
+          "task_received_focus": false,
+          "foreground_states": [
+            [
+              "net.kovidgoyal.kitty",
+              13293
+            ],
+            [
+              "com.microsoft.teams2",
+              831
+            ],
+            [
+              "com.google.Chrome",
+              834
+            ]
+          ]
+        },
+        "viewport": [
+          1880,
+          1000
+        ],
+        "source_sha256": "c0f9b3a5023960342edfbff1997f0a3c5aabed1b5d747f816664995f55475c84",
+        "source_bytes": 6839941,
+        "source_media": {
+          "dimensions": [
+            1880,
+            1000
+          ],
+          "codec": "h264",
+          "duration": 23.126667,
+          "frame_rate": "5375/193",
+          "pixel_format": "yuv420p"
+        }
+      },
+      "overlay_segments": [
+        {
+          "start": 0.0,
+          "label": "",
+          "caption": "Fold the contents",
+          "end": 2.000596584
+        },
+        {
+          "start": 2.000596584,
+          "label": "g then o",
+          "caption": "Open the contents.",
+          "end": 5.000803834
+        },
+        {
+          "start": 5.000803834,
+          "label": "z then M",
+          "caption": "Collapse every branch.",
+          "end": 8.000097875
+        },
+        {
+          "start": 8.000097875,
+          "label": "2 j",
+          "caption": "Select Training.",
+          "end": 10.002936459
+        },
+        {
+          "start": 10.002936459,
+          "label": "l",
+          "caption": "Open Training.",
+          "end": 12.005063042
+        },
+        {
+          "start": 12.005063042,
+          "label": "3 j",
+          "caption": "Select Optimizer.",
+          "end": 15.001616959
+        },
+        {
+          "start": 15.001616959,
+          "label": "Enter",
+          "caption": "Jump to the section.",
+          "end": 19.002274625
+        },
+        {
+          "start": 19.002274625,
+          "label": "Ctrl-o",
+          "caption": "Return to the earlier page.",
+          "end": 23.126667
+        }
+      ],
+      "overlay_font_sha256": "dc256e0b39c2a6fec947129d421fef41b8b429f58f9b6e5d1b148c87f775c1f6",
+      "capture": "c58d179a735e50fc"
+    },
+    "contents-fold-poster": {
+      "kind": "poster",
+      "image": "contents-fold-poster.jpg",
+      "sha256": "afdd01140de80aa598c5f1fd153da921ae62c91c68fa71e8058170ee73eaaf4d",
+      "bytes": 171017,
+      "documents": [
+        "paper"
+      ],
+      "dimensions": [
+        1880,
+        1112
+      ],
+      "video": "contents-fold",
+      "video_sha256": "03102a9528727dd6d44b16da0d56d316b54e24a3c15994710c72800570b8a9d2",
+      "frame_seconds": 11,
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding; frame extracted from captioned video",
+      "capture": "c58d179a735e50fc"
+    },
+    "app-toolbar": {
+      "kind": "native",
+      "image": "app-toolbar.jpg",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "446f78719b0f248609ab5aaf1767d8efd49c5a081cf0ffca40af8b49ab19ae31",
+      "bytes": 189646,
+      "start_page": 3,
+      "documents": [
+        "paper"
+      ],
+      "launch_documents": [
+        "paper"
+      ],
+      "steps": [
+        "native tool Find",
+        "key a t t e n t i o n enter",
+        "wait 1s"
+      ],
+      "dimensions": [
+        1600,
+        940
+      ],
+      "window_checks": {
+        "launch": "open -g -n; bench-events FIFO; no activation",
+        "front": [
+          "com.google.Chrome",
+          834
+        ],
+        "checks": 22,
+        "fully_visible": true,
+        "window": {
+          "X": 3940,
+          "Height": 940,
+          "Y": 80,
+          "Width": 1600
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "com.google.Chrome",
+            834
+          ]
+        ]
+      },
+      "capture": "88bbb8ea0a9be725"
+    },
+    "app-sidebar": {
+      "kind": "native",
+      "image": "app-sidebar.jpg",
+      "encoding": "JPEG; quality 75; 4:4:4; progressive; optimized Huffman coding",
+      "sha256": "0f5f07778cd2122798d8eee0f56e6d1205d73e22fc0d218117ab086a11a302e0",
+      "bytes": 160249,
+      "start_page": 5,
+      "documents": [
+        "paper"
+      ],
+      "launch_documents": [
+        "paper"
+      ],
+      "steps": [
+        "native tool Sidebar",
+        "wait 1s"
+      ],
+      "dimensions": [
+        1600,
+        940
+      ],
+      "window_checks": {
+        "launch": "open -g -n; bench-events FIFO; no activation",
+        "front": [
+          "com.google.Chrome",
+          834
+        ],
+        "checks": 20,
+        "fully_visible": true,
+        "window": {
+          "X": 3940,
+          "Height": 940,
+          "Y": 80,
+          "Width": 1600
+        },
+        "task_received_focus": false,
+        "foreground_states": [
+          [
+            "com.google.Chrome",
+            834
+          ]
+        ]
+      },
+      "capture": "437592546aa9f62e"
     }
   }
 }

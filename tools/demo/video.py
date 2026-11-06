@@ -51,6 +51,52 @@ RECIPES = {
             ),
         ],
     },
+    "follow-hints": {
+        "title": "Follow link hints",
+        "seconds": 21,
+        "poster_at": 3,
+        "page": 2,
+        "documents": ["paper"],
+        "setup": [],
+        "steps": [
+            (2, "text", "f", "f", "Label visible links.", "HINT"),
+            (5, "text", "a", "a", "Follow reference 13.", "11/15 [11]"),
+            (9, "text", "yf", "y then f", "Label links to copy.", "HINT"),
+            (12, "text", "a", "a", "Copy the arXiv address.", "Copied link"),
+            (
+                16,
+                "key",
+                "ctrl+o",
+                "Ctrl-o",
+                "Return to the citation.",
+                "2/15 [2]",
+            ),
+        ],
+    },
+    "contents-fold": {
+        "title": "Fold the contents",
+        "seconds": 23,
+        "poster_at": 11,
+        "page": 5,
+        "documents": ["paper"],
+        "setup": [],
+        "steps": [
+            (2, "text", "go", "g then o", "Open the contents.", "CONTENTS"),
+            (5, "text", "zM", "z then M", "Collapse every branch.", None),
+            (8, "text", "2j", "2 j", "Select Training.", None),
+            (10, "text", "l", "l", "Open Training.", None),
+            (12, "text", "3j", "3 j", "Select Optimizer.", None),
+            (15, "key", "enter", "Enter", "Jump to the section.", "7/15"),
+            (
+                19,
+                "key",
+                "ctrl+o",
+                "Ctrl-o",
+                "Return to the earlier page.",
+                "5/15",
+            ),
+        ],
+    },
     "inspect-reference": {
         "title": "Inspect a reference",
         "seconds": 27,
@@ -451,16 +497,7 @@ def main():
     if args.width % 2 or args.height % 2:
         raise RuntimeError("Video dimensions must be even")
     demo.preflight(args, ["search"])
-    if args.corpus == demo.ROOT / "tmp/corpus":
-        subprocess.run(
-            [
-                "sh",
-                str(demo.ROOT / "tools/corpus/corpus.sh"),
-                "corpus",
-                "paper",
-            ],
-            check=True,
-        )
+    demo.fetch_corpus(args.corpus, demo.scene_documents("search"))
     inputs = demo.input_hashes(args.corpus, ["search"])
     recorder = compile_helper(
         demo.ROOT / "tools/demo/record.swift",

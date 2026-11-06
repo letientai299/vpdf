@@ -354,6 +354,12 @@ run = 'python3 -m tools.demo.capture --binary "${CARGO_TARGET_DIR:-target}/relea
 description = "Record captioned terminal interaction recipes offline"
 run = "python3 -B -m tools.demo.video"
 
+[tasks."demo:app"]
+description = "Capture the macOS app in the background"
+env.VPDF_BENCH_EVENTS = "1"
+env.VPDF_APP_DMG = "0"
+run = "python3 -B -m tools.build.worker build:app && python3 -B -m tools.demo.native --build-profile app"
+
 [tasks."demo:publish"]
 description = "Plan reviewed demo publication; --apply writes to GitHub"
 run = "python3 -B -m tools.demo.media"

@@ -44,6 +44,7 @@ func inspect(_ pid: Int) -> [String: Any] {
   }), let bounds = visible[index][kCGWindowBounds as String] as? [String: Any],
      let rectangle = CGRect(dictionaryRepresentation: bounds as CFDictionary) {
     result["window"] = visible[index][kCGWindowBounds as String]
+    result["number"] = visible[index][kCGWindowNumber as String]
     result["occluded"] = visible.prefix(index).contains { window in
       guard let bounds = window[kCGWindowBounds as String] as? [String: Any],
             let other = CGRect(dictionaryRepresentation: bounds as CFDictionary) else {

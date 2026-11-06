@@ -58,6 +58,23 @@ time compression, or source-viewport resizing occur. Inspect the video, its key
 strip, and the poster before publishing. The gallery provides text transcripts;
 posters and clips have separate logical IDs and comments.
 
+## Capture the macOS app
+
+The [app script][native-script] captures the macOS app with the bench
+`--events` FIFO, so the window never takes focus. It needs an app built with
+the `bench-events` feature; the task builds one. `screencapture` grabs the
+window without its shadow and needs Screen Recording permission. Keep the window
+uncovered: the occlusion check stops the run.
+
+```sh
+mise run demo:app -- --place 3940 80
+mise run demo:app -- --scene app-sidebar
+```
+
+The app scales event geometry by its UI scale; the script measures the window
+and corrects placement and size. The manifest records the `vpdf-gui` identity,
+including its `[bench-events]` marker.
+
 ## Plan and apply
 
 ```sh
@@ -159,4 +176,5 @@ comments. Capture and review remain separate from publication.
 [host]: https://github.com/letientai299/vpdf/issues/9
 [sck]: https://developer.apple.com/documentation/screencapturekit/capturing-screen-content-in-macos
 [ffmpeg]: https://ffmpeg.org/download.html
+[native-script]: ../../tools/demo/native.py
 [video-script]: ../../tools/demo/video.py

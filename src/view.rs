@@ -84,7 +84,9 @@ impl App {
     );
     self.left = left;
     let mut reading = self.reading_parts();
-    reading.view.resize(screen, reading.bar)
+    reading.view.resize(screen, reading.bar)?;
+    self.relocate_hints();
+    Ok(())
   }
 
   pub(crate) fn resize_panel(&mut self, width: u16) -> Result<bool> {

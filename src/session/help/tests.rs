@@ -1144,6 +1144,33 @@ fn hint_actions_preserve_source() -> Result<()> {
   Ok(())
 }
 
+#[test]
+fn hints_follow_relayout() -> Result<()> {
+  use vpdf_ui::hints::Mode;
+  let mut session = Session::new(None);
+  invoke(&mut session, "practice")?;
+  let app = session.app().unwrap();
+  let cells = |app: &App| {
+    let hints = app.overlays.hints().unwrap();
+    hints
+      .items()
+      .iter()
+      .map(|hint| (hint.cell, hint.column))
+      .collect::<Vec<_>>()
+  };
+  app.start_hints(Mode::Follow)?;
+  let before = cells(app);
+  // Stands in for a margin crop that lands later.
+  app.layout.request_zoom(vpdf_ui::layout::Zoom::To(0.8));
+  app.relayout()?;
+  let fresh = app.reading_view().hints(Mode::Follow)?;
+  let expected: Vec<_> =
+    fresh.items().iter().map(|hint| (hint.cell, hint.column)).collect();
+  assert_ne!(before, expected);
+  assert_eq!(cells(app), expected);
+  Ok(())
+}
+
 fn hint_keys(app: &mut App, keys: &str) -> Result<()> {
   use vpdf_model::input::{KeyCode, KeyEvent, KeyModifiers};
   let mut history = vpdf_ui::prompt::History::default();

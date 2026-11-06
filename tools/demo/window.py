@@ -9,6 +9,7 @@ import platform
 import signal
 import subprocess
 import tempfile
+import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -37,43 +38,90 @@ def compile_helper(source, target, flags=()):
     return target
 
 
-class Window(runtime.Runtime):
+def lease():
+    """Holds the live-run lock and the build lease."""
+    lock = Path.home() / "Library/Caches/vpdf-bench/live.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    resources = contextlib.ExitStack()
+    try:
+        held = resources.enter_context(lock.open("a"))
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        build_gate = cache_root(os.environ, ROOT) / "leases/worker"
+        build_gate.parent.mkdir(parents=True, exist_ok=True)
+        deadline = time.monotonic() + 60
+        announced = False
+        while True:
+            try:
+                resources.enter_context(
+                    locked(build_gate, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                )
+                return resources
+            except BlockingIOError:
+                if time.monotonic() > deadline:
+                    raise RuntimeError(
+                        "Repository build lease unavailable"
+                    ) from None
+                if not announced:
+                    print(
+                        "Waiting for repository builds before capture",
+                        flush=True,
+                    )
+                    announced = True
+                time.sleep(0.2)
+    except BaseException:
+        resources.close()
+        raise
+
+
+class Unfocused:
+    """Allows other apps to take focus; the capture never may."""
+
+    checks = 0
+    foreground_states = ()
+    # The monitor thread validates too.
+    validated = threading.Lock()
+
+    def validate(self, state):
+        observed = (state["front"], state.get("front_pid"))
+        if self.pid is not None and observed[1] == self.pid:
+            raise RuntimeError("Capture window received keyboard focus")
+        with self.validated:
+            self.focus = observed
+            super().validate(state)
+            if not self.foreground_states or self.foreground_states[-1] != list(
+                observed
+            ):
+                self.foreground_states = [
+                    *self.foreground_states,
+                    list(observed),
+                ]
+            self.checks += 1
+
+    def evidence(self):
+        self.watch()
+        self.check()
+        return {
+            "launch": self.launch_note,
+            "front": list(self.focus),
+            "checks": self.checks,
+            "fully_visible": not self.last_state.get("occluded", True),
+            "window": self.last_state.get("window"),
+            "task_received_focus": False,
+            "foreground_states": [list(row) for row in self.foreground_states],
+        }
+
+
+class Window(Unfocused, runtime.Runtime):
+    launch_note = "open -g -n; hidden Kitty; live place helper"
+
     def __init__(self, args, directory):
         if platform.system() != "Darwin":
             raise RuntimeError("Background demo capture requires macOS")
-        lock = Path.home() / "Library/Caches/vpdf-bench/live.lock"
-        lock.parent.mkdir(parents=True, exist_ok=True)
-        self.resources = contextlib.ExitStack()
-        self.lease = self.resources.enter_context(lock.open("a"))
+        self.resources = lease()
         try:
-            fcntl.flock(self.lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            build_gate = cache_root(os.environ, ROOT) / "leases/worker"
-            build_gate.parent.mkdir(parents=True, exist_ok=True)
-            deadline = time.monotonic() + 60
-            announced = False
-            while True:
-                try:
-                    self.resources.enter_context(
-                        locked(build_gate, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    )
-                    break
-                except BlockingIOError:
-                    if time.monotonic() > deadline:
-                        raise RuntimeError(
-                            "Repository build lease unavailable"
-                        ) from None
-                    if not announced:
-                        print(
-                            "Waiting for repository builds before capture",
-                            flush=True,
-                        )
-                        announced = True
-                    time.sleep(0.2)
             probe = compile_helper(
                 ROOT / "tools/bench/live/inspect.swift", CACHE / "inspect"
             )
-            self.checks = 0
-            self.foreground_states = []
             self.arguments = args
             self.remote_address = None
             super().__init__(
@@ -82,18 +130,6 @@ class Window(runtime.Runtime):
         except BaseException:
             self.resources.close()
             raise
-
-    def validate(self, state):
-        observed = (state["front"], state.get("front_pid"))
-        if self.pid is not None and observed[1] == self.pid:
-            raise RuntimeError("Capture window received keyboard focus")
-        self.focus = observed
-        super().validate(state)
-        if not self.foreground_states or self.foreground_states[-1] != list(
-            observed
-        ):
-            self.foreground_states.append(list(observed))
-        self.checks += 1
 
     def launch(self, command, address, log):
         self.remote_address = address
@@ -166,19 +202,6 @@ class Window(runtime.Runtime):
             time.sleep(0.05)
         self.enable_window()
         self.check()
-
-    def evidence(self):
-        self.watch()
-        self.check()
-        return {
-            "launch": "open -g -n; hidden Kitty; live place helper",
-            "front": list(self.focus),
-            "checks": self.checks,
-            "fully_visible": not self.last_state.get("occluded", True),
-            "window": self.last_state.get("window"),
-            "task_received_focus": False,
-            "foreground_states": [list(row) for row in self.foreground_states],
-        }
 
     def close(self):
         try:

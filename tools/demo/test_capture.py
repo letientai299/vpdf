@@ -36,6 +36,13 @@ class DemoTests(unittest.TestCase):
                         gallery.capture(name)
                 launch = remote.call_args.args
                 self.assertNotIn("--page", launch)
+                config = launch[launch.index(str(self.binary)) + 2]
+                if name in demo.CONFIGS:
+                    self.assertEqual(
+                        Path(config).read_text(), demo.CONFIGS[name]
+                    )
+                else:
+                    self.assertEqual(config, "NONE")
                 references = launch[launch.index(str(self.binary)) + 3 :]
                 self.assertEqual(len(references), len(documents))
                 for index, (document, reference) in enumerate(

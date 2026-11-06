@@ -127,7 +127,8 @@ the around form includes adjacent separation where the object supports it.
 
 `m` waits for a mark name, as in `ma`. A quote selects a register, as in
 `"ayy`. `Ctrl-w` waits for a window operation. Pending input appears in the
-status line. Sequences wait without a timeout. An invalid continuation clears
+status line. After a short pause, a strip lists the keys that can follow.
+Sequences wait without a timeout. An invalid continuation clears
 the sequence and consumes the key; repeat the intended command from its start.
 
 ## Input focus and cancellation

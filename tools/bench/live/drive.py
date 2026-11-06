@@ -191,6 +191,17 @@ def wait_gates(allow_battery, timeout, allow_readers=()):
             time.sleep(0.25)
 
 
+def finish(runtime):
+    """Stops the monitor and reader; returns cleanup errors."""
+    errors = []
+    for step in (runtime.stop_monitor, runtime.close):
+        try:
+            step()
+        except Exception as caught:
+            errors.append(str(caught))
+    return errors
+
+
 def run_backend(args, binary, directory, probe, parse, power):
     runtime = None
     error = None
@@ -210,11 +221,7 @@ def run_backend(args, binary, directory, probe, parse, power):
         error = caught
     finally:
         if runtime:
-            for finish in (runtime.stop_monitor, runtime.close):
-                try:
-                    finish()
-                except Exception as caught:
-                    cleanup.append(str(caught))
+            cleanup = finish(runtime)
             error = error or runtime.monitor_error
     if error or cleanup:
         failure = dict(

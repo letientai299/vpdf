@@ -5,7 +5,7 @@ use crate::app::{App, Request};
 use std::time::{Duration, Instant};
 use vpdf_model::document::Target;
 use vpdf_model::input::{KeyEvent, MouseEvent};
-use vpdf_ui::hints::{Mode, Transition};
+use vpdf_ui::hints::{Hints, Mode, Transition};
 use vpdf_ui::input::{Dismiss, InputOwner, Targets};
 use vpdf_ui::paint::Frame;
 use vpdf_ui::pointer::{Hit, List};
@@ -131,6 +131,22 @@ impl App {
     let hints = self.reading_view().hints(mode)?;
     self.overlays.open_hints(hints);
     Ok(())
+  }
+
+  /// Relayouts move links; open labels follow them.
+  pub(crate) fn relocate_hints(&mut self) {
+    let Some(mode) = self.overlays.hints().map(Hints::mode) else { return };
+    match self.reading_view().hints(mode) {
+      Ok(fresh) => {
+        if let Some(hints) = self.overlays.hints_mut() {
+          hints.relocate(fresh);
+        }
+      }
+      // No link left in view.
+      Err(_) => {
+        self.overlays.close_hints();
+      }
+    }
   }
 
   pub fn hint_key(&mut self, key: KeyEvent) -> Result<bool> {

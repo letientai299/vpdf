@@ -8,17 +8,20 @@ their original provenance. Publication and recovery use the
 
 ## Current coverage
 
-| Workflow           | Example                                       |
-| ------------------ | --------------------------------------------- |
-| Manual and panes   | Manual document and help beside a book        |
-| Reference lookup   | `K` preview and `gd` on a body figure label   |
-| Continuous text    | Text crossing a page separator                |
-| Notes              | Authored comment, hover author, and actions   |
-| Figures and tables | Caption list beside a selected diagram        |
-| Marks              | Local/global marks and return context         |
-| Reading layout     | Crop, zoom, rotation, and narrow-pane text    |
-| Themes             | A small set of readable built-in palettes     |
-| Interactions       | Find/return, reference, panes, select/capture |
+| Gallery section                | Examples                                                |
+| ------------------------------ | ------------------------------------------------------- |
+| Three documents in split panes | Outline, preview, search, and OCR in three panes        |
+| Open documents                 | Recent previews, page grid, tabs, start screen          |
+| Help and discovery             | Manual, help beside a book, next-key clues              |
+| Read comfortably               | Crop, zoom, rotation, text, themes, recolor             |
+| Find text                      | Results, find/return video, Vietnamese, Chinese         |
+| Links and references           | Hints, underlines, `K`, `gd`, hint and reference videos |
+| Move through a document        | Marks, jumps, contents tree and fold video, scrollbar   |
+| Select and copy                | Context menu and select/capture video                   |
+| Figures, regions, and notes    | Caption list, capture, Alt sweep, comments              |
+| Panes                          | Pane comparison video                                   |
+| Scans and OCR                  | Recognized EDVAC text beside the scan                   |
+| macOS app                      | Toolbar with Find, contents sidebar                     |
 
 `gd` resolves supplied PDF links and recognizable document labels. It does not
 look up arbitrary words or fetch missing references. Ambiguous matches can
@@ -29,7 +32,6 @@ require choosing an outline entry or result; that branch needs its own example.
 | Workflow          | Scene                                                            |
 | ----------------- | ---------------------------------------------------------------- |
 | Preview expansion | Scroll past its target page; middle-click into a split           |
-| Scrollbar         | Scrub with heading/match ticks and a visible section label       |
 | Mouse layout      | Drag dividers, restore sizing, and middle-click a destination    |
 | Pointer selection | Hold selection at an edge and show scrolling                     |
 | Page movement     | Space/Shift-Space with retained reading overlap                  |

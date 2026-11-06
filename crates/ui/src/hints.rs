@@ -151,6 +151,15 @@ impl Hints {
   pub fn typed(&self) -> &str {
     &self.typed
   }
+  pub fn mode(&self) -> Mode {
+    self.mode
+  }
+
+  /// Takes `fresh` label positions; typed input stays.
+  pub fn relocate(&mut self, fresh: Self) {
+    self.items = fresh.items;
+    self.selected = None;
+  }
   pub fn selected(&self) -> Option<usize> {
     self.selected
   }

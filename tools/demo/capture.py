@@ -42,7 +42,7 @@ SCENES = {
             ("text", ":ocr eng\r"),
             ("wait", "OCR ready"),
             ("text", "i}vipzt"),
-            ("wait", "VISUAL"),
+            ("wait", " V  1:scan.pdf"),
             ("key", "ctrl+y"),
             ("key", "ctrl+y"),
             ("key", "ctrl+y"),
@@ -177,7 +177,7 @@ SCENES = {
             ("text", ":text\r"),
             ("wait", "DEFINITIONS"),
             ("text", "i0v3e"),
-            ("wait", "VISUAL"),
+            ("wait", " V  1:scan.pdf"),
         ],
     ),
     "help-split": (
@@ -223,6 +223,59 @@ SCENES = {
         ["paper"],
         [("text", "ma4ggmA2gg:marks\r"), ("wait", "MARKS")],
     ),
+    "contents": (
+        5,
+        ["paper"],
+        [
+            ("text", "go"),
+            ("wait", "CONTENTS"),
+            ("text", "zMl"),
+            ("pause", 1),
+        ],
+    ),
+    "clues": (
+        2,
+        ["paper"],
+        [("text", "g"), ("wait", "table of contents")],
+    ),
+    "hints": (
+        2,
+        ["paper"],
+        [("text", ":links on\r"), ("text", "f"), ("wait", "HINT")],
+    ),
+    "scrollbar": (
+        2,
+        ["paper"],
+        [
+            ("text", "/attention\r"),
+            ("wait", "matches"),
+            ("mouse", ("move", 2556, 115)),
+            ("mouse", ("left-down", 2556, 115)),
+            ("mouse", ("left-drag", 2556, 700)),
+            ("wait", "p. 8"),
+        ],
+    ),
+    "home": (1, [], []),
+    "search-vi": (
+        13,
+        ["vietnamese"],
+        [
+            ("text", "/kinh te\r"),
+            ("wait", "matches"),
+            ("text", "gs"),
+            ("wait", "RESULTS"),
+        ],
+    ),
+    "search-zh": (
+        16,
+        ["chinese"],
+        [
+            ("text", "/经济\r"),
+            ("wait", "matches"),
+            ("text", "gs"),
+            ("wait", "RESULTS"),
+        ],
+    ),
 }
 
 SCENES["annotations"][2].extend([("note", "hover"), ("wait", "Vpdf")])
@@ -249,6 +302,32 @@ SCENES["zoom"] = (
         ("text", ":text\r"),
     ],
 )
+
+
+def pane(direction, command):
+    return [("key", "ctrl+w"), ("text", direction), ("text", command)]
+
+
+RECOLOR = [
+    ("text", ":vsplit\r:vsplit\r:split\r"),
+    *pane("l", ":split\r"),
+    *pane("l", ":split\r"),
+    ("key", "ctrl+w"),
+    ("text", "="),
+    ("text", ":recolor sepia 100\r"),
+    *pane("h", ":recolor sepia 60\r"),
+    *pane("h", ":recolor sepia 30\r"),
+    *pane("j", ":recolor dark 30\r"),
+    *pane("l", ":recolor dark 60\r"),
+    *pane("l", ":recolor dark 100\r"),
+]
+SCENES["recolor"] = (
+    3,
+    ["paper"],
+    [("text", "3+20"), ("key", "ctrl+e"), *RECOLOR, ("pause", 2)],
+)
+# Undimmed inactive panes keep colors comparable.
+CONFIGS = {"recolor": "[appearance.opacity]\ninactive = 0\n"}
 for theme in ("dark", "light", "nord"):
     SCENES["theme-" + theme] = (
         2,
@@ -289,18 +368,34 @@ def scene_documents(name):
     return list(dict.fromkeys([*documents, *opened]))
 
 
-def input_hashes(corpus, selected):
-    names = sorted({doc for name in selected for doc in scene_documents(name)})
+def fetch_corpus(corpus, documents):
+    if corpus == ROOT / "tmp/corpus":
+        subprocess.run(
+            ["sh", str(ROOT / "tools/corpus/corpus.sh"), "corpus", *documents],
+            check=True,
+            cwd=ROOT,
+        )
+
+
+def document_hashes(corpus, documents):
     return {
         name: {"file": f"{name}.pdf", "sha256": digest(corpus / f"{name}.pdf")}
-        for name in names
+        for name in sorted(documents)
     }
+
+
+def input_hashes(corpus, selected):
+    return document_hashes(
+        corpus, {doc for name in selected for doc in scene_documents(name)}
+    )
 
 
 def binary_identity(binary, profile):
     output = run(str(binary), "--version")
     version = next(
-        line for line in output.splitlines() if line.startswith("vpdf ")
+        line
+        for line in output.splitlines()
+        if line.startswith(("vpdf ", "vpdf-gui "))
     )
     source = embedded(output)
     commit = source["revision"]
@@ -550,7 +645,7 @@ class Gallery:
             f"VPDF_TRACE={self.args.raw / (name + '.jsonl')}",
             str(self.args.binary),
             "-u",
-            "NONE",
+            self.config(name),
             *(
                 (self.args.corpus / f"{doc}.pdf").resolve().as_uri()
                 + (f"#page={page}" if index == 0 else "")
@@ -559,7 +654,15 @@ class Gallery:
         )
         if previous:
             self.remote("close-window", "--match", f"id:{previous}")
-        self.wait("NORMAL")
+        self.wait("NORMAL" if documents else "RECENT")
+
+    def config(self, name):
+        if name not in CONFIGS:
+            return "NONE"
+        path = self.directory / name / "config.toml"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(CONFIGS[name])
+        return str(path)
 
     def actions(self, steps, timeline=None, phase="setup", pace=0.3):
         for kind, value in steps:
@@ -642,6 +745,7 @@ class Gallery:
             "documents": scene_documents(name),
             "launch_documents": documents,
             "steps": steps,
+            **({"config": CONFIGS[name]} if name in CONFIGS else {}),
             "dimensions": [self.args.width, self.args.height],
             "window_checks": self.host.evidence(),
             "resolved_targets": self.resolved_targets,
@@ -831,15 +935,10 @@ def main():
         print("\n".join(SCENES))
         return
     selected = list(dict.fromkeys(args.scene or SCENES))
-    if args.corpus == ROOT / "tmp/corpus":
-        documents = sorted(
-            {doc for name in selected for doc in scene_documents(name)}
-        )
-        subprocess.run(
-            ["sh", str(ROOT / "tools/corpus/corpus.sh"), "corpus", *documents],
-            check=True,
-            cwd=ROOT,
-        )
+    fetch_corpus(
+        args.corpus,
+        sorted({doc for name in selected for doc in scene_documents(name)}),
+    )
     ocr = preflight(args, selected)
     inputs = input_hashes(args.corpus, selected)
     args.output.mkdir(parents=True, exist_ok=True)
@@ -851,7 +950,8 @@ def main():
         manifest["scenes"] = {
             name: scene
             for name, scene in manifest["scenes"].items()
-            if name in SCENES or scene.get("kind") in {"video", "poster"}
+            if name in SCENES
+            or scene.get("kind") in {"video", "poster", "native"}
         }
     with tempfile.TemporaryDirectory(
         prefix="vpdf-demo-", dir="/tmp"

@@ -18,16 +18,16 @@
       "publication": {
         "id": "overview-shot",
         "kind": "image",
-        "sha256": "5c50c2a1276b4c51a11c785b6aeadcbf50e6bcbf94697da8996180150736a49a",
-        "capture": "abef9234b9b7ac6e",
-        "url": "https://github.com/user-attachments/assets/9622fbb2-be4c-4fec-a309-bf9ab040088b",
+        "sha256": "215daa6cc33fc5885b2247bad65bc0acfb280a793dc1798997c1c18af0b6d902",
+        "capture": "d6de1b33f2427ad0",
+        "url": "https://github.com/user-attachments/assets/f76fe814-c5bf-4631-b623-271f516d4eee",
         "metadata": {
           "dimensions": [
             1880,
             1000
           ]
         },
-        "published_at": "2026-10-28T00:47:20.489904+00:00",
+        "published_at": "2026-11-06T02:35:40.294905+00:00",
         "history": [
           {
             "capture": "61cabc806f2baf09",
@@ -54,10 +54,22 @@
             "url": "https://github.com/user-attachments/assets/feee9af7-54ff-45bc-aa03-64459bd70e3f"
           },
           {
-            "url": "https://github.com/user-attachments/assets/2be01fa8-8b03-48c9-b135-32458351aa2a",
-            "sha256": "e96e225ebc4e5772b8eb728f2aa5a60a33f3e7502767e8e5ece1b4fec4f499c9",
             "capture": "c7e615eea5ddda3c",
+            "metadata": {
+              "dimensions": [
+                1880,
+                1000
+              ]
+            },
             "published_at": "2026-10-27T13:40:43.572267+00:00",
+            "sha256": "e96e225ebc4e5772b8eb728f2aa5a60a33f3e7502767e8e5ece1b4fec4f499c9",
+            "url": "https://github.com/user-attachments/assets/2be01fa8-8b03-48c9-b135-32458351aa2a"
+          },
+          {
+            "url": "https://github.com/user-attachments/assets/9622fbb2-be4c-4fec-a309-bf9ab040088b",
+            "sha256": "5c50c2a1276b4c51a11c785b6aeadcbf50e6bcbf94697da8996180150736a49a",
+            "capture": "abef9234b9b7ac6e",
+            "published_at": "2026-10-28T00:47:20.489904+00:00",
             "metadata": {
               "dimensions": [
                 1880,
@@ -210,16 +222,16 @@
       "publication": {
         "id": "preview-shot",
         "kind": "image",
-        "sha256": "1fd7042a6934a206fbb0f21a2940e63f016690c7df4a3a1b6b169d2ef61964de",
-        "capture": "abef9234b9b7ac6e",
-        "url": "https://github.com/user-attachments/assets/4fd1093b-1ab0-496e-8544-aaa98dbae025",
+        "sha256": "8387e2f2ef86d70db6a35b8402a3eb04237cf788d666b9bb30abe6c5e2282b03",
+        "capture": "d6de1b33f2427ad0",
+        "url": "https://github.com/user-attachments/assets/ba24a6d3-1998-4c8c-87de-cdabf3ed94c8",
         "metadata": {
           "dimensions": [
             1880,
             1000
           ]
         },
-        "published_at": "2026-10-28T00:48:20.241716+00:00",
+        "published_at": "2026-11-06T02:35:59.043458+00:00",
         "history": [
           {
             "capture": "2208654b64ec0f1f",
@@ -246,14 +258,26 @@
             "url": "https://github.com/user-attachments/assets/b533f77d-9bbb-4edc-bfd8-93ac4b2aa74b"
           },
           {
-            "url": "https://github.com/user-attachments/assets/003bf1e3-85ab-4f52-8ac9-e826a866115c",
-            "sha256": "77a670b4509208fa4147202aa37646621f661fe465cd2d3db5d0cfb5eaf988de",
             "capture": "ee929ba45751615f",
-            "published_at": "2026-10-27T13:41:42.840434+00:00",
             "metadata": {
               "dimensions": [
                 1280,
                 1440
+              ]
+            },
+            "published_at": "2026-10-27T13:41:42.840434+00:00",
+            "sha256": "77a670b4509208fa4147202aa37646621f661fe465cd2d3db5d0cfb5eaf988de",
+            "url": "https://github.com/user-attachments/assets/003bf1e3-85ab-4f52-8ac9-e826a866115c"
+          },
+          {
+            "url": "https://github.com/user-attachments/assets/4fd1093b-1ab0-496e-8544-aaa98dbae025",
+            "sha256": "1fd7042a6934a206fbb0f21a2940e63f016690c7df4a3a1b6b169d2ef61964de",
+            "capture": "abef9234b9b7ac6e",
+            "published_at": "2026-10-28T00:48:20.241716+00:00",
+            "metadata": {
+              "dimensions": [
+                1880,
+                1000
               ]
             }
           }
@@ -378,16 +402,16 @@
       "publication": {
         "id": "mouse-hints-shot",
         "kind": "image",
-        "sha256": "b04f5377cc3db5ec7515468a86600a348869705d91e0fb1c908ea0c43fb0b9c0",
-        "capture": "abef9234b9b7ac6e",
-        "url": "https://github.com/user-attachments/assets/67e64c56-3757-4032-87b0-f1e28cf333a9",
+        "sha256": "71be673394fe5b00899482a323100768fbdb4387e178e20850bb0af300316d33",
+        "capture": "588b55a3f772cc2a",
+        "url": "https://github.com/user-attachments/assets/aa9a70d0-48e5-4315-993d-5432b8e82ad0",
         "metadata": {
           "dimensions": [
             1880,
             1000
           ]
         },
-        "published_at": "2026-10-28T00:49:20.482453+00:00",
+        "published_at": "2026-11-06T15:46:02.765172+00:00",
         "history": [
           {
             "capture": "7dbed3285fd3ec9c",
@@ -414,14 +438,26 @@
             "url": "https://github.com/user-attachments/assets/b5272ec1-f8ca-42dc-9ef1-4f6dd5e14331"
           },
           {
-            "url": "https://github.com/user-attachments/assets/b5272ec1-f8ca-42dc-9ef1-4f6dd5e14331",
-            "sha256": "6bacb679e5931edd249b8c2defef32bee88d14bf3968be30b42e594cc38038ad",
             "capture": "7dbed3285fd3ec9c",
-            "published_at": "2026-10-27T14:01:29.703227+00:00",
             "metadata": {
               "dimensions": [
                 2560,
                 1440
+              ]
+            },
+            "published_at": "2026-10-27T14:01:29.703227+00:00",
+            "sha256": "6bacb679e5931edd249b8c2defef32bee88d14bf3968be30b42e594cc38038ad",
+            "url": "https://github.com/user-attachments/assets/b5272ec1-f8ca-42dc-9ef1-4f6dd5e14331"
+          },
+          {
+            "url": "https://github.com/user-attachments/assets/67e64c56-3757-4032-87b0-f1e28cf333a9",
+            "sha256": "b04f5377cc3db5ec7515468a86600a348869705d91e0fb1c908ea0c43fb0b9c0",
+            "capture": "abef9234b9b7ac6e",
+            "published_at": "2026-10-28T00:49:20.482453+00:00",
+            "metadata": {
+              "dimensions": [
+                1880,
+                1000
               ]
             }
           }
@@ -1070,26 +1106,23 @@
       "publication": {
         "id": "inspect-reference-video",
         "kind": "video",
-        "sha256": "5dcd1110723bfa58edc146bd225e92cfea32da813ec48f578ae22671d8dd6653",
-        "capture": "9d6e4e754fd1895c",
-        "url": "https://github.com/user-attachments/assets/25c9c0c0-0241-4464-aa07-fcc2f766b63a",
+        "sha256": "043c13aa8ad55e9f5a229aa14a49a7e835ad6ed4eb4935b8c9106ae44a958976",
+        "capture": "88bc2a4637ed5b32",
+        "url": "https://github.com/user-attachments/assets/b1ea51ac-55f8-4d77-bf90-24ab206ce667",
         "metadata": {
           "dimensions": [
             1880,
             1112
           ],
           "codec": "h264",
-          "duration": 27.766667,
+          "duration": 27.033333,
           "frame_rate": "30/1",
           "pixel_format": "yuv420p"
         },
-        "published_at": "2026-10-28T00:53:42.754999+00:00",
+        "published_at": "2026-11-06T02:36:16.595974+00:00",
         "history": [
           {
-            "url": "https://github.com/user-attachments/assets/4db2675d-c1b4-4e98-9e63-cce7a76cce0f",
-            "sha256": "7e938d18fa0bae27d59390bf663f09268f5dbfa87f384193744b10fcf52e6ce0",
             "capture": "42ce64a36788428d",
-            "published_at": "2026-10-27T12:43:37.513288+00:00",
             "metadata": {
               "codec": "h264",
               "dimensions": [
@@ -1097,6 +1130,25 @@
                 1112
               ],
               "duration": 27.166667,
+              "frame_rate": "30/1",
+              "pixel_format": "yuv420p"
+            },
+            "published_at": "2026-10-27T12:43:37.513288+00:00",
+            "sha256": "7e938d18fa0bae27d59390bf663f09268f5dbfa87f384193744b10fcf52e6ce0",
+            "url": "https://github.com/user-attachments/assets/4db2675d-c1b4-4e98-9e63-cce7a76cce0f"
+          },
+          {
+            "url": "https://github.com/user-attachments/assets/25c9c0c0-0241-4464-aa07-fcc2f766b63a",
+            "sha256": "5dcd1110723bfa58edc146bd225e92cfea32da813ec48f578ae22671d8dd6653",
+            "capture": "9d6e4e754fd1895c",
+            "published_at": "2026-10-28T00:53:42.754999+00:00",
+            "metadata": {
+              "codec": "h264",
+              "dimensions": [
+                1880,
+                1112
+              ],
+              "duration": 27.766667,
               "frame_rate": "30/1",
               "pixel_format": "yuv420p"
             }
@@ -1114,16 +1166,16 @@
       "publication": {
         "id": "inspect-reference-poster",
         "kind": "image",
-        "sha256": "a1ee947b5e85991c6344d0620c16b6cf7832d789f0e9e795ab06bee135e4ea88",
-        "capture": "9d6e4e754fd1895c",
-        "url": "https://github.com/user-attachments/assets/661b402d-c0fc-485e-847e-dec202baf6f8",
+        "sha256": "d8b61a8fa56e3e10774858e9ed06db46eb9d7d18cfdd1526200063e7def8842f",
+        "capture": "88bc2a4637ed5b32",
+        "url": "https://github.com/user-attachments/assets/bbf256cc-4ee3-426c-b364-2e33d343caf4",
         "metadata": {
           "dimensions": [
             1880,
             1112
           ]
         },
-        "published_at": "2026-10-28T00:54:04.891375+00:00",
+        "published_at": "2026-11-06T02:36:36.167616+00:00",
         "history": [
           {
             "capture": "42ce64a36788428d",
@@ -1138,10 +1190,22 @@
             "url": "https://github.com/user-attachments/assets/d2a9a301-ff79-4c11-90f6-c2064ceca1a9"
           },
           {
-            "url": "https://github.com/user-attachments/assets/e6d251d5-532f-43ef-ad2e-3fb9e8fddec4",
-            "sha256": "419ecf825ae23759c2aa1c084ddba58b1fb777deccafe229886a291096634d8a",
             "capture": "42ce64a36788428d",
+            "metadata": {
+              "dimensions": [
+                1880,
+                1112
+              ]
+            },
             "published_at": "2026-10-27T13:46:29.572236+00:00",
+            "sha256": "419ecf825ae23759c2aa1c084ddba58b1fb777deccafe229886a291096634d8a",
+            "url": "https://github.com/user-attachments/assets/e6d251d5-532f-43ef-ad2e-3fb9e8fddec4"
+          },
+          {
+            "url": "https://github.com/user-attachments/assets/661b402d-c0fc-485e-847e-dec202baf6f8",
+            "sha256": "a1ee947b5e85991c6344d0620c16b6cf7832d789f0e9e795ab06bee135e4ea88",
+            "capture": "9d6e4e754fd1895c",
+            "published_at": "2026-10-28T00:54:04.891375+00:00",
             "metadata": {
               "dimensions": [
                 1880,
@@ -1623,6 +1687,336 @@
           }
         ],
         "comment_id": 6442428440
+      }
+    },
+    "recolor-shot": {
+      "kind": "image",
+      "scene": "recolor",
+      "reference": "recolor",
+      "title": "Page colors",
+      "attribution": "Vpdf terminal capture. Attention Is All You Need, Ashish Vaswani and colleagues. The displayed documents retain their authors\u2019 rights. See docs/demos.md for source links.",
+      "publication": {
+        "id": "recolor-shot",
+        "kind": "image",
+        "sha256": "37cf8e781f73f567e9724c118b6753d0c70bce58721d3aa4d81aac71c1a14198",
+        "capture": "b1b8564c9089011c",
+        "url": "https://github.com/user-attachments/assets/8a184f35-0fda-425c-bc62-88f5fd69a336",
+        "metadata": {
+          "dimensions": [
+            1880,
+            1000
+          ]
+        },
+        "published_at": "2026-11-06T04:47:16.213750+00:00",
+        "history": [],
+        "comment_id": 6677158776
+      }
+    },
+    "home-shot": {
+      "kind": "image",
+      "scene": "home",
+      "reference": "home",
+      "title": "Start screen",
+      "attribution": "Vpdf terminal capture of the start screen.",
+      "publication": {
+        "id": "home-shot",
+        "kind": "image",
+        "sha256": "02021c73202f38e15311f83a76b5c35fbe193aeb4b3f2254b6afb4f559987e0c",
+        "capture": "217391383ed613bd",
+        "url": "https://github.com/user-attachments/assets/730a2abe-4c95-4442-a7bb-350543e49b6d",
+        "metadata": {
+          "dimensions": [
+            1880,
+            1000
+          ]
+        },
+        "published_at": "2026-11-06T05:13:37.712717+00:00",
+        "history": [],
+        "comment_id": 6677530209
+      }
+    },
+    "clues-shot": {
+      "kind": "image",
+      "scene": "clues",
+      "reference": "clues",
+      "title": "Next-key clues",
+      "attribution": "Vpdf terminal capture. Attention Is All You Need, Ashish Vaswani and colleagues. The displayed documents retain their authors\u2019 rights. See docs/demos.md for source links.",
+      "publication": {
+        "id": "clues-shot",
+        "kind": "image",
+        "sha256": "c576d0e2114bffa33e7a40d9e4b2e5b472734cc8cf7aa6d29dfb1ebeb73f117d",
+        "capture": "afeb656e66fbc54b",
+        "url": "https://github.com/user-attachments/assets/3135d5ed-14ac-4c34-8edd-dbe41a9f2a0f",
+        "metadata": {
+          "dimensions": [
+            1880,
+            1000
+          ]
+        },
+        "published_at": "2026-11-06T05:13:54.098486+00:00",
+        "history": [],
+        "comment_id": 6677533806
+      }
+    },
+    "search-vi-shot": {
+      "kind": "image",
+      "scene": "search-vi",
+      "reference": "search-vi",
+      "title": "Vietnamese search",
+      "attribution": "Vpdf terminal capture. Vi\u1ec7t Nam 2045: Th\u1ec3 ch\u1ebf cho m\u1ed9t T\u01b0\u01a1ng lai Thu nh\u1eadp cao, \u00a9 2025 World Bank. See docs/demos.md for source links.",
+      "publication": {
+        "id": "search-vi-shot",
+        "kind": "image",
+        "sha256": "091c8e1f858671dec65abb0f7117d22c682d77e72543cf3224b11b83892a37d7",
+        "capture": "217391383ed613bd",
+        "url": "https://github.com/user-attachments/assets/267d8e90-5a22-4575-985d-0e212a6513c3",
+        "metadata": {
+          "dimensions": [
+            1880,
+            1000
+          ]
+        },
+        "published_at": "2026-11-06T05:14:10.528060+00:00",
+        "history": [],
+        "comment_id": 6677537488
+      }
+    },
+    "hints-shot": {
+      "kind": "image",
+      "scene": "hints",
+      "reference": "hints",
+      "title": "Link underlines",
+      "attribution": "Vpdf terminal capture. Attention Is All You Need, Ashish Vaswani and colleagues. The displayed documents retain their authors\u2019 rights. See docs/demos.md for source links.",
+      "publication": {
+        "id": "hints-shot",
+        "kind": "image",
+        "sha256": "09e386101c2c3708e65c67111daac3c59fb4958d0c27bd719e3c6a4392d73eb5",
+        "capture": "afeb656e66fbc54b",
+        "url": "https://github.com/user-attachments/assets/ad42c579-f384-4317-b364-781fbd5a776b",
+        "metadata": {
+          "dimensions": [
+            1880,
+            1000
+          ]
+        },
+        "published_at": "2026-11-06T05:14:27.338076+00:00",
+        "history": [],
+        "comment_id": 6677541153
+      }
+    },
+    "contents-shot": {
+      "kind": "image",
+      "scene": "contents",
+      "reference": "contents",
+      "title": "Contents tree",
+      "attribution": "Vpdf terminal capture. Attention Is All You Need, Ashish Vaswani and colleagues. The displayed documents retain their authors\u2019 rights. See docs/demos.md for source links.",
+      "publication": {
+        "id": "contents-shot",
+        "kind": "image",
+        "sha256": "278949e4072f23cd1e51eace8e521af663d753c18ce67783d0a34cafa72a42b5",
+        "capture": "49fc9fe3670c97d8",
+        "url": "https://github.com/user-attachments/assets/49be8683-0daf-41dc-98cd-cd307d3ed4cb",
+        "metadata": {
+          "dimensions": [
+            1880,
+            1000
+          ]
+        },
+        "published_at": "2026-11-06T05:14:44.724846+00:00",
+        "history": [],
+        "comment_id": 6677544920
+      }
+    },
+    "scrollbar-shot": {
+      "kind": "image",
+      "scene": "scrollbar",
+      "reference": "scrollbar",
+      "title": "Scrollbar",
+      "attribution": "Vpdf terminal capture. Attention Is All You Need, Ashish Vaswani and colleagues. The displayed documents retain their authors\u2019 rights. See docs/demos.md for source links.",
+      "publication": {
+        "id": "scrollbar-shot",
+        "kind": "image",
+        "sha256": "5055078f357735b4e338bbecf49c232d863632efcfe1183d54fdb8ed9262b550",
+        "capture": "afeb656e66fbc54b",
+        "url": "https://github.com/user-attachments/assets/6cd84e65-fc2e-4e7f-b2af-34552332edba",
+        "metadata": {
+          "dimensions": [
+            1880,
+            1000
+          ]
+        },
+        "published_at": "2026-11-06T05:15:01.750345+00:00",
+        "history": [],
+        "comment_id": 6677548757
+      }
+    },
+    "search-zh-shot": {
+      "kind": "image",
+      "scene": "search-zh",
+      "reference": "search-zh",
+      "title": "Chinese search",
+      "attribution": "Vpdf terminal capture. World Economic Outlook, October 2024: Policy Pivot, Rising Threats (Chinese edition), \u00a9 2024 International Monetary Fund. See docs/demos.md for source links.",
+      "publication": {
+        "id": "search-zh-shot",
+        "kind": "image",
+        "sha256": "87d4ba756fcdf0c940163bf0c87bef3acd59c8a6c61eea845cc1b1ce51d2dc7e",
+        "capture": "9df946c62ee0352e",
+        "url": "https://github.com/user-attachments/assets/cf45e5be-bb87-42a9-acdb-0855c3675dc9",
+        "metadata": {
+          "dimensions": [
+            1880,
+            1000
+          ]
+        },
+        "published_at": "2026-11-06T05:30:47.458916+00:00",
+        "history": [],
+        "comment_id": 6677756879
+      }
+    },
+    "follow-hints-video": {
+      "kind": "video",
+      "scene": "follow-hints",
+      "reference": "follow-hints-video",
+      "title": "Follow link hints",
+      "attribution": "Vpdf terminal recording. Attention Is All You Need, Ashish Vaswani and colleagues. Authors retain their rights. The key strip reproduces captured input times; no cuts or time compression.",
+      "publication": {
+        "id": "follow-hints-video",
+        "kind": "video",
+        "sha256": "6f5430f7df1e5e3c676a687e30be9e51457938f678e7be25217d03edda41f573",
+        "capture": "e951a0e4add33a39",
+        "url": "https://github.com/user-attachments/assets/8d1c0df3-c410-4150-ab50-95a73d034714",
+        "metadata": {
+          "dimensions": [
+            1880,
+            1112
+          ],
+          "codec": "h264",
+          "duration": 21.4,
+          "frame_rate": "30/1",
+          "pixel_format": "yuv420p"
+        },
+        "published_at": "2026-11-06T11:09:58.046508+00:00",
+        "history": [],
+        "comment_id": 6683452578
+      }
+    },
+    "follow-hints-poster": {
+      "kind": "image",
+      "scene": "follow-hints-poster",
+      "reference": "follow-hints-poster",
+      "title": "Follow link hints poster",
+      "attribution": "Vpdf terminal recording. Attention Is All You Need, Ashish Vaswani and colleagues. Authors retain their rights. The key strip reproduces captured input times; no cuts or time compression.",
+      "publication": {
+        "id": "follow-hints-poster",
+        "kind": "image",
+        "sha256": "092bff74fba33e26ead583fb05a700f785d92367df3ddd49f2200adec56774a5",
+        "capture": "e951a0e4add33a39",
+        "url": "https://github.com/user-attachments/assets/28a2aa0e-0288-4ead-a995-2297527d59de",
+        "metadata": {
+          "dimensions": [
+            1880,
+            1112
+          ]
+        },
+        "published_at": "2026-11-06T11:10:29.384919+00:00",
+        "history": [],
+        "comment_id": 6683461761
+      }
+    },
+    "contents-fold-video": {
+      "kind": "video",
+      "scene": "contents-fold",
+      "reference": "contents-fold-video",
+      "title": "Fold the contents",
+      "attribution": "Vpdf terminal recording. Attention Is All You Need, Ashish Vaswani and colleagues. Authors retain their rights. The key strip reproduces captured input times; no cuts or time compression.",
+      "publication": {
+        "id": "contents-fold-video",
+        "kind": "video",
+        "sha256": "03102a9528727dd6d44b16da0d56d316b54e24a3c15994710c72800570b8a9d2",
+        "capture": "c58d179a735e50fc",
+        "url": "https://github.com/user-attachments/assets/90b23594-7c0a-49eb-b0ab-dc09fa29584d",
+        "metadata": {
+          "dimensions": [
+            1880,
+            1112
+          ],
+          "codec": "h264",
+          "duration": 23.133333,
+          "frame_rate": "30/1",
+          "pixel_format": "yuv420p"
+        },
+        "published_at": "2026-11-06T11:10:59.777438+00:00",
+        "history": [],
+        "comment_id": 6683470547
+      }
+    },
+    "contents-fold-poster": {
+      "kind": "image",
+      "scene": "contents-fold-poster",
+      "reference": "contents-fold-poster",
+      "title": "Fold the contents poster",
+      "attribution": "Vpdf terminal recording. Attention Is All You Need, Ashish Vaswani and colleagues. Authors retain their rights. The key strip reproduces captured input times; no cuts or time compression.",
+      "publication": {
+        "id": "contents-fold-poster",
+        "kind": "image",
+        "sha256": "afdd01140de80aa598c5f1fd153da921ae62c91c68fa71e8058170ee73eaaf4d",
+        "capture": "c58d179a735e50fc",
+        "url": "https://github.com/user-attachments/assets/ec6268a1-8252-4412-8ef3-03dd7d4e1647",
+        "metadata": {
+          "dimensions": [
+            1880,
+            1112
+          ]
+        },
+        "published_at": "2026-11-06T11:11:30.879899+00:00",
+        "history": [],
+        "comment_id": 6683479259
+      }
+    },
+    "app-toolbar-shot": {
+      "kind": "image",
+      "scene": "app-toolbar",
+      "reference": "app-toolbar",
+      "title": "App toolbar and Find",
+      "attribution": "Vpdf macOS app capture. Attention Is All You Need, Ashish Vaswani and colleagues. The displayed documents retain their authors\u2019 rights. See docs/demos.md for source links.",
+      "publication": {
+        "id": "app-toolbar-shot",
+        "kind": "image",
+        "sha256": "446f78719b0f248609ab5aaf1767d8efd49c5a081cf0ffca40af8b49ab19ae31",
+        "capture": "88bbb8ea0a9be725",
+        "url": "https://github.com/user-attachments/assets/a16cbb09-b8e3-4be5-bcdc-c36dec09af64",
+        "metadata": {
+          "dimensions": [
+            1600,
+            940
+          ]
+        },
+        "published_at": "2026-11-06T11:12:00.727219+00:00",
+        "history": [],
+        "comment_id": 6683487824
+      }
+    },
+    "app-sidebar-shot": {
+      "kind": "image",
+      "scene": "app-sidebar",
+      "reference": "app-sidebar",
+      "title": "App contents sidebar",
+      "attribution": "Vpdf macOS app capture. Attention Is All You Need, Ashish Vaswani and colleagues. The displayed documents retain their authors\u2019 rights. See docs/demos.md for source links.",
+      "publication": {
+        "id": "app-sidebar-shot",
+        "kind": "image",
+        "sha256": "0f5f07778cd2122798d8eee0f56e6d1205d73e22fc0d218117ab086a11a302e0",
+        "capture": "437592546aa9f62e",
+        "url": "https://github.com/user-attachments/assets/92022bf6-3e11-4614-b14a-1ac59e6ab52d",
+        "metadata": {
+          "dimensions": [
+            1600,
+            940
+          ]
+        },
+        "published_at": "2026-11-06T11:12:29.461425+00:00",
+        "history": [],
+        "comment_id": 6683496063
       }
     }
   }
