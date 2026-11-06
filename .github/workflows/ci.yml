@@ -27,7 +27,7 @@ jobs:
           - os: ubuntu-24.04
             platform: linux-x86_64
             tools: python rust aqua:nextest-rs/nextest/cargo-nextest ruff rumdl taplo upx typst aqua:jgm/pandoc github:qpdf/qpdf
-          - os: macos-14
+          - os: macos-15
             platform: macos-aarch64
             tools: python rust aqua:nextest-rs/nextest/cargo-nextest ruff rumdl taplo typst aqua:jgm/pandoc github:qpdf/qpdf
     runs-on: ${{ matrix.os }}
