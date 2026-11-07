@@ -171,6 +171,23 @@ class WorkerTests(unittest.TestCase):
             )
         self.assertEqual((self.repo / ".git/index").read_bytes(), original)
 
+    def test_shallow_snapshot(self):
+        head = self.git("rev-parse", "HEAD")
+        for marker, expected in [(head, b"true"), (None, b"false")]:
+            shallow = self.repo / ".git/shallow"
+            if marker:
+                shallow.write_bytes(marker)
+            else:
+                shallow.unlink()
+            with self.snapshot() as (source, _):
+                self.assertEqual(
+                    subprocess.check_output(
+                        ["git", "rev-parse", "--is-shallow-repository"],
+                        cwd=source,
+                    ).strip(),
+                    expected,
+                )
+
     def test_build_inputs(self):
         self.write(
             "build.rs",

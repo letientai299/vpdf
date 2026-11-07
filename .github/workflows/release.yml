@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
 
 permissions:
   contents: read
@@ -49,13 +49,15 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          notes="$RUNNER_TEMP/notes.md"
+          python3 -B -m tools.package.notes "$RELEASE_TAG" > "$notes"
           python3 -B -m tools.package.publication "$RELEASE_TAG" dist
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)
             if [ "$draft" = true ]; then
               gh release upload "$RELEASE_TAG" dist/* --clobber
               gh release edit "$RELEASE_TAG" --draft=false --latest \
-                --notes-file "changelogs/$RELEASE_TAG.md"
+                --notes-file "$notes"
             else
               mkdir existing
               gh release download "$RELEASE_TAG" --dir existing
@@ -64,7 +66,7 @@ jobs:
           else
             gh release create "$RELEASE_TAG" dist/* --verify-tag --draft \
               --title "Vpdf $RELEASE_TAG" \
-              --notes-file "changelogs/$RELEASE_TAG.md"
+              --notes-file "$notes"
             gh release edit "$RELEASE_TAG" --draft=false --latest
           fi
 
@@ -80,6 +82,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
         with:

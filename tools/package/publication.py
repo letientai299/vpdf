@@ -6,6 +6,7 @@ import json
 import subprocess
 from pathlib import Path
 
+from tools.package.notes import render
 from tools.package.stable import validate
 
 PLATFORMS = ("linux-x86_64", "macos-aarch64")
@@ -17,14 +18,14 @@ def digest(path):
 
 
 def identity(root, tag):
-    validate(root, tag)
+    validate(tag)
     revision = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=root, text=True
     ).strip()
     return dict(
         tag=tag,
         revision=revision,
-        changelog_sha256=digest(root / "changelogs" / f"{tag}.md"),
+        changelog_sha256=hashlib.sha256(render(root, tag).encode()).hexdigest(),
     )
 
 

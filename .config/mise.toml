@@ -115,6 +115,10 @@ run = [
 description = "Package the release executable with UPX on Linux"
 run = "python3 -B -m tools.build.worker release"
 
+[tasks."release:notes"]
+description = "Preview release notes for a tag"
+run = "python3 -B -m tools.package.notes"
+
 [tasks."_release"]
 hide = true
 depends = ["build"]
@@ -311,6 +315,7 @@ description = "Test CI failure propagation and release archives"
 run = [
   "python3 -B -m unittest discover -s tools/check -t . -p test_ci.py",
   "python3 -B -m unittest discover -s tools/package -t . -p test_stable.py",
+  "python3 -B -m unittest discover -s tools/package -t . -p test_notes.py",
   "python3 -B -m unittest discover -s tools/package -t . -p test_publication.py",
 ]
 

@@ -1,28 +1,20 @@
 """Check stable release inputs before publication."""
 
-import re
 import subprocess
 import sys
-import tomllib
-from pathlib import Path
+
+from tools.package.notes import STABLE, render, repository
 
 
-def validate(root, tag):
-    if not re.fullmatch(
-        r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", tag
-    ):
+def validate(tag):
+    if not STABLE.fullmatch(tag):
         raise ValueError("Stable release tag required")
-    notes = (root / "changelogs" / f"{tag}.md").read_text().strip()
-    heading, body = notes.split("\n", 1)
-    if heading != f"# Vpdf {tag}" or not body.strip():
-        raise ValueError("Release changelog differs from tag")
 
 
 def version_text(root, tag):
-    validate(root, tag)
-    package = tomllib.loads((root / "Cargo.toml").read_text())["package"]
-    notes = (root / "changelogs" / f"{tag}.md").read_text().strip()
-    return f"vpdf {tag[1:]}\n\n{notes}\n\n{package['repository']}\n"
+    validate(tag)
+    notes = render(root, tag)
+    return f"vpdf {tag[1:]}\n\n{notes}\n\n{repository(root)}\n"
 
 
 def verify_version(root, tag, output):
@@ -31,9 +23,8 @@ def verify_version(root, tag, output):
 
 
 def main():
-    root = Path.cwd()
     tag = sys.argv[1]
-    validate(root, tag)
+    validate(tag)
     revision = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], text=True
     ).strip()

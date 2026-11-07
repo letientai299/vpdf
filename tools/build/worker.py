@@ -138,6 +138,17 @@ def snapshot_git(root, source, revision, descriptor):
     if not alternates.exists() or alternates.read_bytes() != content:
         alternates.parent.mkdir(parents=True, exist_ok=True)
         replace_file(alternates, content, 0o644)
+    # Release notes refuse truncated history; keep the marker.
+    shallow = Path(
+        os.fsdecode(
+            git("rev-parse", "--path-format=absolute", "--git-path", "shallow")
+        )
+    )
+    copy = metadata / "shallow"
+    if not shallow.exists():
+        copy.unlink(missing_ok=True)
+    elif not copy.exists() or copy.read_bytes() != shallow.read_bytes():
+        replace_file(copy, shallow.read_bytes(), 0o644)
     if revision is None:
         result = subprocess.run(
             ["git", "rev-parse", "--verify", "HEAD"],

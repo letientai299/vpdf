@@ -754,12 +754,24 @@ executable. Packaging leaves the Cargo build uncompressed.
 
 Builds of a commit with a version tag report that version; other builds report
 `dev`. The Cargo package version is unused. The [release workflow][release]
-builds stable terminal releases from version tags after CI. It uses the matching
-file in `changelogs/` for release notes, verifies installation through mise, and
-updates Homebrew. Stable tags and assets remain fixed. The native macOS app
-remains source-only.
+builds stable terminal releases from version tags after CI, verifies
+installation through mise, and updates Homebrew. Stable tags and assets remain
+fixed. The native macOS app remains source-only.
+
+[Release notes][notes] come from [Conventional Commits][conventional] since the
+previous stable tag: `feat`, `fix`, and `perf` subjects, plus breaking changes
+of any type. Notes skip merge commits, reverted pairs, copies of commits under
+the previous tag, and commits that touch only tests, benchmarks, or development
+tooling. Type such changes `test`, `ci`, `build`, or `chore`. Tagged stable
+builds embed the same notes in `--version`; shallow clones omit them.
+
+Preview the notes on the commit to tag with `mise run release:notes v1.2.3`,
+then push the tag. Notes depend on existing tags, so keep tags fixed once a
+release builds, and delete a failed, unpublished tag before tagging again.
 
 [tasks]: ../../.config/mise.toml
+[notes]: ../../tools/package/notes.py
+[conventional]: https://www.conventionalcommits.org/en/v1.0.0/
 [worktrunk]: https://worktrunk.dev/
 [wt-hooks]: ../../.config/wt.toml
 [help-build]: help.md

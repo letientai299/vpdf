@@ -46,26 +46,39 @@ fn tags() -> Option<String> {
   git(&["tag", "--points-at", "HEAD"])
 }
 
+/// Shares the release workflow's notes renderer.
+fn notes(tag: &str) -> String {
+  if git(&["rev-parse", "--is-shallow-repository"]).as_deref() == Some("true") {
+    println!("cargo::warning=Release notes need full history; omitting them");
+    return String::new();
+  }
+  let output = Command::new("python3")
+    .args(["-B", "-m", "tools.package.notes", tag])
+    .output()
+    .expect("Release notes need Python 3.11; run mise install");
+  assert!(
+    output.status.success(),
+    "Release notes failed: {}",
+    String::from_utf8_lossy(&output.stderr)
+  );
+  let text = String::from_utf8(output.stdout).unwrap();
+  text.strip_suffix('\n').unwrap_or(&text).to_owned()
+}
+
 fn main() {
   // Overlaps help facts with the Git queries below.
   let assets = std::thread::spawn(help::prepare);
   let tags = tags().unwrap_or_default();
   let version = identity::version(&tags);
   println!("cargo::rustc-env=VPDF_VERSION={version}");
-  let release = identity::release(&tags).map(|tag| tag.to_string());
-  let notes = identity::changelog(Path::new("changelogs"), release.as_deref())
-    .expect("Build changelog unavailable");
+  // Only stable tags publish notes for CI to verify.
+  let notes = identity::release(&tags)
+    .filter(|release| release.pre.is_empty() && release.build.is_empty())
+    .map_or_else(String::new, |release| notes(&format!("v{release}")));
   let output = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
   std::fs::write(output.join("changelog.md"), notes).unwrap();
-  for path in [
-    "src",
-    "crates",
-    "tools",
-    ".config",
-    "changelogs",
-    "Cargo.toml",
-    "Cargo.lock",
-  ] {
+  for path in ["src", "crates", "tools", ".config", "Cargo.toml", "Cargo.lock"]
+  {
     println!("cargo::rerun-if-changed={path}");
   }
   let root = Path::new(env!("CARGO_MANIFEST_DIR"));

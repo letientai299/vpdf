@@ -191,18 +191,16 @@ class ArchiveTests(unittest.TestCase):
         (self.root / "Cargo.toml").write_text(
             '[package]\nversion = "0.1.0"\nrepository = "https://example.com/vpdf"\n'
         )
-        (self.root / "changelogs").mkdir()
-        (self.root / "changelogs/v0.1.0.md").write_text(
-            "# Vpdf v0.1.0\n\nFeatures\n"
-        )
         self.env.update(GITHUB_REF_TYPE="tag", GITHUB_REF_NAME="v0.1.0")
-        with self.assertRaisesRegex(ValueError, "Packaged version"):
+        notes = "# Vpdf v0.1.0\n\nFeatures"
+        with patch("tools.package.stable.render", return_value=notes):
+            with self.assertRaisesRegex(ValueError, "Packaged version"):
+                ci.archive(self.root, self.env)
+            output = f"vpdf 0.1.0\n\n{notes}\n\nhttps://example.com/vpdf\n"
+            self.binary.write_text(
+                "#!/bin/sh\ncat <<'NOTES'\n" + output + "NOTES\n"
+            )
             ci.archive(self.root, self.env)
-        output = "vpdf 0.1.0\n\n# Vpdf v0.1.0\n\nFeatures\n\nhttps://example.com/vpdf\n"
-        self.binary.write_text(
-            "#!/bin/sh\ncat <<'NOTES'\n" + output + "NOTES\n"
-        )
-        ci.archive(self.root, self.env)
 
     def test_corrupt_archive_rejected(self):
         ci.archive(self.root, self.env)
